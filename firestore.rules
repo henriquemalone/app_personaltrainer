@@ -1,6 +1,14 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Catálogo compartilhado de exercícios (vídeo, dicas, músculos) — sem dados pessoais
+    match /catalogo/{id} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null
+        && request.resource.data.keys().hasOnly(['nome', 'videos', 'dicas', 'erros', 'principais', 'secundarios', 'subs', 'em'])
+        && request.resource.data.nome is string && request.resource.data.nome.size() <= 200
+        && (!('videos' in request.resource.data) || request.resource.data.videos.size() <= 10);
+    }
     // Cada usuário só lê e grava os próprios dados
     match /users/{uid} {
       allow read, write: if request.auth != null && request.auth.uid == uid;

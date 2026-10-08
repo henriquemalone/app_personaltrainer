@@ -18,3 +18,7 @@ export const RECAPTCHA_SITE_KEY = "6LcBV-UtAAAAAGw-f2_BGfIep3bAUOiHbsBEYFP5";
 
 // Modelo do Gemini usado no cadastro por prompt e nas substituições.
 export const MODELO_IA = "gemini-3.5-flash";
+
+// Chave da YouTube Data API v3 (busca automática de vídeos de execução).
+// Restrinja a chave ao domínio henriquemalone.github.io no Google Cloud. Vazio = busca desativada.
+export const YOUTUBE_API_KEY = "";

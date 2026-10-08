@@ -93,7 +93,7 @@
   .sess{padding:12px 0;border-bottom:1px solid var(--line);cursor:pointer}
   .sess:last-child{border-bottom:0}
   .det{margin-top:8px;font-size:13px;color:var(--mut);line-height:1.6}
-  .modal{position:fixed;inset:0;background:#000b;display:none;align-items:flex-end;justify-content:center;z-index:20}
+  .modal{position:fixed;inset:0;background:#000b;display:none;align-items:flex-end;justify-content:center;z-index:25}
   .modal.show{display:flex}
   .sheet{background:var(--card);border:1px solid var(--line);border-radius:24px 24px 0 0;width:100%;max-width:520px;padding:22px 18px calc(22px + var(--sb));max-height:88vh;overflow-y:auto}
   .sheet h2{font-size:20px;margin-bottom:8px}
@@ -123,6 +123,69 @@
   details summary::-webkit-details-marker{display:none}
   details summary::after{content:'+';color:var(--mut)} details[open] summary::after{content:'–'}
   .calc{background:#c6f43214;border:1px solid #c6f43240;border-radius:12px;padding:10px 12px;font-size:13px;margin-top:10px;line-height:1.6}
+  /* ---- treino passo a passo ---- */
+  body.emtreino header, body.emtreino nav{display:none}
+  body.emtreino main{padding:0 14px calc(150px + var(--sb))}
+  .ttop{display:flex;align-items:center;justify-content:space-between;padding:calc(12px + var(--st)) 0 10px;position:sticky;top:0;background:var(--bg);z-index:3}
+  .ttop button{background:none;border:0;color:var(--ac);font-size:22px;width:40px;height:40px;cursor:pointer}
+  .ttop div{text-align:center;min-width:0} .ttop b{font-size:15px;display:block} .ttop small{color:var(--mut);font-size:12px}
+  .tprog{height:3px;background:var(--card2);margin:0 -14px 14px} .tprog i{display:block;height:100%;background:var(--ac);transition:width .3s}
+  .exhead{display:flex;gap:12px;align-items:center;cursor:pointer;border-radius:16px;background:var(--card);padding:8px;border:1px solid var(--line);margin-bottom:8px}
+  .exhead h3,.combo h3{font-size:15px;line-height:1.25}
+  .thumb{width:96px;height:64px;border-radius:10px;flex-shrink:0;position:relative;overflow:hidden;background:linear-gradient(135deg,#2c3340,#151820);display:grid;place-items:center}
+  .thumb img{width:100%;height:100%;object-fit:cover}
+  .play{position:absolute;right:6px;bottom:6px;width:22px;height:22px;border-radius:50%;background:#000a;display:grid;place-items:center;font-size:10px}
+  .badge{position:absolute;left:6px;bottom:6px;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:800;color:#fff}
+  .info{color:var(--mut);font-size:20px;padding:0 6px}
+  .combo{display:flex;border-radius:16px;overflow:hidden;border:1px solid var(--line);background:var(--card);margin-bottom:8px}
+  .combo .rows{flex:1;min-width:0} .combo .r{display:flex;gap:12px;align-items:center;padding:8px;cursor:pointer} .combo .r+.r{border-top:1px solid var(--line)}
+  .combo .side{writing-mode:vertical-rl;background:#7aa7ff22;color:var(--bi);font-size:12px;font-weight:700;display:grid;place-items:center;padding:0 6px;letter-spacing:1px}
+  .notes{margin:10px 2px 4px;font-size:14px;line-height:1.5} .notes small{color:var(--mut);font-size:12px;display:block;margin-bottom:2px}
+  .tabs{display:flex;border-bottom:1px solid var(--line);margin:10px 0 6px}
+  .tabs button{flex:1;background:none;border:0;color:var(--mut);padding:11px 4px;font-size:14px;font-weight:600;border-bottom:2px solid transparent;cursor:pointer}
+  .tabs button.on{color:var(--ac);border-color:var(--ac)}
+  .tmeta{color:var(--mut);font-size:12px;text-align:center;margin:6px 0 4px}
+  .rhead{display:grid;grid-template-columns:44px 1fr;gap:8px;font-size:11px;color:var(--mut);text-align:center}
+  .rhead .ln,.round .ln{display:grid;grid-template-columns:26px 1fr 12px 1fr 30px;gap:6px;align-items:center;padding:5px 0}
+  .rhead .ln{padding:0 8px}
+  .round{display:grid;grid-template-columns:44px 1fr;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--line)}
+  .round .n{width:38px;height:38px;border-radius:50%;border:2px solid var(--line);background:none;display:grid;place-items:center;font-weight:700;color:var(--mut);font-size:15px;cursor:pointer}
+  .round.cur .n{border-color:var(--ac);color:var(--ac)} .round.done .n{background:var(--ok);border-color:var(--ok);color:#062}
+  .round .box{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:3px 8px}
+  .round .ln+.ln{border-top:1px solid var(--line)}
+  .round .b{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:800;color:#fff}
+  .round input{width:100%;background:var(--card2);border:1px solid var(--line);color:var(--tx);border-radius:10px;padding:9px 2px;text-align:center;font-size:16px;font-weight:600}
+  .round.done input{opacity:.55}
+  .round .x{color:var(--mut);text-align:center;font-size:13px}
+  .round .pv{font-size:10px;color:var(--mut);grid-column:2/5;margin-top:-3px;text-align:center}
+  .mini{background:none;border:0;color:var(--mut);font-size:18px;cursor:pointer}
+  .add{background:none;border:1px dashed var(--line);color:var(--mut);border-radius:12px;padding:11px;width:100%;margin-top:10px;cursor:pointer;font-size:14px}
+  #tBar{position:absolute;left:0;right:0;bottom:0;border-top:1px solid var(--line);padding:10px 14px calc(14px + var(--sb));background:#121315f5;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);z-index:6;display:none}
+  #tRest{display:none;align-items:center;justify-content:center;gap:18px;padding:2px 0 10px}
+  #tRest b{font-size:30px;color:var(--ac);font-variant-numeric:tabular-nums;min-width:100px;text-align:center}
+  #tRest button{background:none;border:0;color:var(--mut);font-size:15px;cursor:pointer;padding:6px}
+  #tRest .skip{color:var(--ac);font-weight:700}
+  .tact{display:flex;gap:8px} .tact .btn{padding:15px;font-size:16px} .tact .more{flex:0 0 56px;width:56px;font-size:20px}
+  .btn.tnext{background:var(--ok);color:#062}
+  .mi{display:flex;align-items:center;gap:12px;padding:14px 4px;border-bottom:1px solid var(--line);cursor:pointer;font-size:15px}
+  .mi span:first-child{width:26px;text-align:center} .mi.bad{color:var(--bad)}
+  .li{display:flex;align-items:center;gap:10px;padding:11px 4px;border-bottom:1px solid var(--line);cursor:pointer}
+  .li .st{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:12px;border:2px solid var(--line);flex-shrink:0}
+  .li.done .st{background:var(--ok);border-color:var(--ok);color:#062} .li.cur .st{border-color:var(--ac);color:var(--ac)} .li.skip .st{border-color:var(--warn);color:var(--warn)}
+  /* tela do exercício */
+  #exTela{position:fixed;inset:0;background:var(--bg);display:none;flex-direction:column;z-index:15;max-width:520px;margin:0 auto}
+  #exTela.show{display:flex}
+  .exh{display:flex;align-items:center;gap:8px;padding:calc(12px + var(--st)) 10px 10px}
+  .exh button{background:none;border:0;color:var(--ac);font-size:22px;cursor:pointer;width:40px;height:40px}
+  .exh b{flex:1;text-align:center;font-size:15px;line-height:1.3}
+  #exVideo{aspect-ratio:16/9;width:100%;min-height:200px;background:#000;display:grid;place-items:center}
+  #exVideo iframe{width:100%;height:100%;border:0}
+  .semvid{text-align:center;color:var(--mut);font-size:13px;padding:16px;display:flex;flex-direction:column;align-items:center}
+  #exTabs{display:flex;border-bottom:1px solid var(--line);margin:0}
+  #exBody{flex:1;overflow-y:auto;padding:14px 16px calc(24px + var(--sb))}
+  ol.dicas{padding-left:20px;line-height:1.55;font-size:14px;margin-top:8px} ol.dicas li{margin-bottom:6px}
+  .vopt{display:flex;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line);cursor:pointer}
+  .vopt img{width:96px;height:54px;object-fit:cover;border-radius:8px;flex-shrink:0} .vopt.on img{outline:2px solid var(--ac)}
 </style>
 </head>
 <body class="noauth">
@@ -138,6 +201,8 @@
     <div><div style="font-size:12px;font-weight:600;opacity:.7" id="tmLbl">DESCANSO</div><b id="tm">00:00</b></div>
     <div style="display:flex;gap:6px"><button onclick="A.addT(-15)">−15s</button><button onclick="A.addT(15)">+15s</button><button onclick="A.stopT()">Pular</button></div>
   </div>
+  <div id="tBar"><div id="tRest"><button onclick="A.addT(-10)">−10s</button><b id="tRt">00:00</b><button onclick="A.addT(10)">+10s</button><button class="skip" onclick="A.stopT()">Pular</button></div>
+    <div class="tact"><button class="btn" id="tMain" onclick="A.acaoTreino()">Registrar série</button><button class="btn ghost more" onclick="A.menuTreino()" aria-label="Opções">⋮</button></div></div>
   <nav>
     <button data-v="fichas" onclick="A.go('fichas')"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>Fichas</button>
     <button data-v="treino" onclick="A.go('treino')"><span class="dot" id="navDot" style="display:none"></span><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 7v10M18 7v10M3 10v4M21 10v4M6 12h12"/></svg>Treinar</button>
@@ -145,6 +210,10 @@
     <button data-v="medidas" onclick="A.go('medidas')"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 8h18v8H3z"/><path d="M7 8v3M11 8v4M15 8v3M19 8v4"/></svg>Medidas</button>
   </nav>
 </div>
+<div id="exTela"><div class="exh"><button onclick="A.fecharExercicio()" aria-label="Fechar">✕</button><b id="exNome"></b><button onclick="A.trocarVideo()" aria-label="Trocar vídeo" style="font-size:20px">⋯</button></div>
+  <div id="exVideo"></div>
+  <div id="exTabs" class="tabs"><button onclick="A.abaExercicio(0)">Progresso</button><button onclick="A.abaExercicio(1)">Execução</button><button onclick="A.abaExercicio(2)">Músculos</button></div>
+  <div id="exBody"></div></div>
 <div class="modal" id="modal" onclick="if(event.target===this)A.closeModal()"><div class="sheet" id="sheet"></div></div>
 <div class="toast" id="toast"></div>
 <input type="file" id="fileIn" accept="application/json,.json" style="display:none" onchange="A.importarArquivo(this)">

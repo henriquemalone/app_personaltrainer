@@ -1,15 +1,15 @@
 // ================================================================
 //  Treino v2 — PWA + Firebase (Auth, Firestore offline, AI Logic)
 // ================================================================
-export const VERSAO_APP = '2.1.0';
+export const VERSAO_APP = '2.2.0';
 const FB = 'https://www.gstatic.com/firebasejs/12.19.0/';
 
-import { firebaseConfig, RECAPTCHA_SITE_KEY, MODELO_IA } from './config.js';
+import { firebaseConfig, RECAPTCHA_SITE_KEY, MODELO_IA, YOUTUBE_API_KEY } from './config.js';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword,
   sendPasswordResetEmail, signOut, updateProfile } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js';
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc,
-  deleteDoc, onSnapshot, query, orderBy, limit, writeBatch } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
+  deleteDoc, onSnapshot, query, orderBy, limit, writeBatch, getDoc } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
 
 // ================= Utilidades =================
 const $ = id => document.getElementById(id);
@@ -131,8 +131,10 @@ const SCHEMA_IMPORT = { type: 'object', required: ['fichas'], properties: {
       juntoComAnterior: { type: 'boolean', description: 'true se este exercício forma bi-set/tri-set/conjugado com o exercício anterior' },
       observacao: { type: 'string' },
       substitutos: { type: 'array', items: { type: 'string' }, description: 'Exatamente 3 exercícios que trabalham os mesmos músculos' } } } } } } } } };
-const SCHEMA_SUBS = { type: 'object', required: ['itens'], properties: { itens: { type: 'array', items: { type: 'object', required: ['exercicio', 'substitutos'],
-  properties: { exercicio: { type: 'string' }, substitutos: { type: 'array', items: { type: 'string' } } } } } } };
+const SCHEMA_DET = { type: 'object', required: ['itens'], properties: { itens: { type: 'array', items: { type: 'object',
+  required: ['exercicio', 'substitutos', 'dicas', 'erros', 'principais', 'secundarios'], properties: {
+    exercicio: { type: 'string' }, substitutos: { type: 'array', items: { type: 'string' } }, dicas: { type: 'array', items: { type: 'string' } },
+    erros: { type: 'array', items: { type: 'string' } }, principais: { type: 'array', items: { type: 'string' } }, secundarios: { type: 'array', items: { type: 'string' } } } } } } };
 
 async function iaImportar(texto) {
   const m = await modeloIA(SCHEMA_IMPORT);
@@ -152,26 +154,35 @@ TREINO:
   const r = await m.generateContent(prompt);
   return JSON.parse(r.response.text());
 }
-async function iaSubstitutos(nomes) {
-  const m = await modeloIA(SCHEMA_SUBS);
-  const prompt = `Para cada exercício de musculação abaixo, sugira exatamente 3 substitutos comuns em academia que trabalhem o mesmo músculo com padrão de movimento semelhante (varie o equipamento: barra, halter, máquina, cabo). Responda em português do Brasil, mantendo o nome do exercício original em "exercicio".
+async function iaDetalhes(nomes) {
+  const m = await modeloIA(SCHEMA_DET);
+  const prompt = `Para cada exercício de musculação abaixo, responda em português do Brasil, na mesma ordem, mantendo o nome original em "exercicio":
+- "substitutos": exatamente 3 exercícios comuns em academia que trabalhem o mesmo músculo com padrão de movimento semelhante (varie o equipamento: barra, halter, máquina, cabo).
+- "dicas": 3 a 5 passos curtos e objetivos de execução correta (posição inicial, movimento, respiração/controle).
+- "erros": 2 ou 3 erros comuns, curtos.
+- "principais": músculos principais trabalhados (nomes anatômicos populares, ex.: "Peitoral maior", "Deltoide anterior").
+- "secundarios": músculos auxiliares.
 ${nomes.map(n => '- ' + n).join('\n')}`;
   const r = await m.generateContent(prompt);
-  const out = {};
-  for (const it of JSON.parse(r.response.text()).itens || []) out[String(it.exercicio).toLowerCase()] = (it.substitutos || []).slice(0, 3);
+  const itens = JSON.parse(r.response.text()).itens || [], out = {};
+  itens.forEach((it, k) => { const nome = nomes.find(n => n.toLowerCase() === String(it.exercicio).toLowerCase()) || (itens.length === nomes.length ? nomes[k] : null); if (!nome) return;
+    out[nome.toLowerCase()] = { subs: (it.substitutos || []).slice(0, 3), dicas: (it.dicas || []).slice(0, 6), erros: (it.erros || []).slice(0, 4), principais: (it.principais || []).slice(0, 5), secundarios: (it.secundarios || []).slice(0, 6) }; });
   return out;
 }
-// Preenche substitutos faltantes de uma ficha em segundo plano
+// Preenche substitutos, dicas e músculos faltantes (em segundo plano, 1 chamada por ficha)
 async function completarSubstitutos(f) {
-  const falt = f.itens.filter(e => !e.subs || !e.subs.length);
-  if (!falt.length || !navigator.onLine) return;
+  if (!navigator.onLine) return;
   try {
-    const mapa = await iaSubstitutos([...new Set(falt.map(e => e.nome))]);
+    const nomes = [...new Set(f.itens.map(e => e.nome))]; const falt = [];
+    for (const n of nomes) { const c = await lerCatalogo(n); const semSubs = f.itens.some(e => e.nome === n && !e.subs?.length);
+      if (!c.dicas?.length || !c.principais || (semSubs && !c.subs?.length)) falt.push(n); }
+    const mapa = falt.length ? await iaDetalhes(falt) : {};
+    for (const n of falt) if (mapa[n.toLowerCase()]) gravarCatalogo(n, mapa[n.toLowerCase()]);
     const atual = S.fichas.find(x => x.id === f.id); if (!atual) return;
     let mudou = false;
-    atual.itens.forEach(e => { if ((!e.subs || !e.subs.length) && mapa[e.nome.toLowerCase()]) { e.subs = mapa[e.nome.toLowerCase()]; mudou = true; } });
+    for (const e of atual.itens) if (!e.subs?.length) { const c = catCache[slug(e.nome)]; if (c?.subs?.length) { e.subs = c.subs; mudou = true; } }
     if (mudou) salvarFicha_(atual);
-  } catch (e) { console.warn('subs', e); }
+  } catch (e) { console.warn('detalhes', e); }
 }
 
 // ================= Modelo de ficha =================
@@ -237,6 +248,8 @@ function render() {
   if (!configurado) return vNaoConfigurado();
   if (!S.user) return vAuth();
   document.body.classList.remove('noauth');
+  const emT = rota === 'treino' && !!S.ativo; document.body.classList.toggle('emtreino', emT); $('tBar').style.display = emT ? 'block' : 'none';
+  if (!emT && exAberto) fecharExercicio(); if (tEnd) tick();
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.v === rota || (['editar', 'prompt', 'revisar'].includes(rota) && b.dataset.v === 'fichas') || (rota === 'avaliacao' && b.dataset.v === 'medidas')));
   $('navDot').style.display = S.ativo ? 'block' : 'none';
   $('hdrBtn').style.visibility = rota === 'ajustes' ? 'hidden' : 'visible';
@@ -494,10 +507,10 @@ function salvarImportado() {
   b.commit().catch(falhou);
   if (I.validade) { S.perfil.cfg.avisoVisto = null; salvarCfg(); }
   const n = I.fichas.length; importado = null; textoPrompt = ''; go('fichas'); toast(`${n} ficha${n > 1 ? 's' : ''} salva${n > 1 ? 's' : ''}`);
-  I.fichas.forEach(f => { if (f.itens.some(e => !e.subs.length)) setTimeout(() => completarSubstitutos(f), 1500); });
+  I.fichas.forEach((f, k) => setTimeout(() => completarSubstitutos(f), 1500 + k * 1200)); // dicas, músculos e substituições faltantes
 }
 
-// ================= Treino ao vivo =================
+// ================= Treino ao vivo (passo a passo) =================
 function ultimoDoExercicio(nome, preferida) {
   const n = String(nome).toLowerCase();
   if (preferida) { const e = preferida.ex.find(x => x.nome.toLowerCase() === n); if (e && e.sets.length) return e; }
@@ -511,66 +524,160 @@ function setsIniciais(meta, pe) {
 function iniciar(id) {
   if (S.ativo && !confirm('Já existe um treino em andamento. Descartar e começar outro?')) return go('treino');
   const f = S.fichas.find(x => x.id === id); const ult = S.sessoes.find(s => s.fichaId === id);
-  S.ativo = { fichaId: f.id, letra: f.letra, nome: f.nome, inicio: Date.now(),
+  S.ativo = { fichaId: f.id, letra: f.letra, nome: f.nome, inicio: Date.now(), passo: 0, pulados: [],
     itens: f.itens.map(e => { const pe = ultimoDoExercicio(e.nome, ult);
-      return { id: e.id, nome: e.nome, descanso: e.descanso, bi: !!e.bi, obs: e.obs || '', subs: e.subs || [], meta: clone(e.series), prev: prevTxt(pe), sets: setsIniciais(e.series, pe) }; }) };
-  salvarAtivo(true); go('treino'); wake(true);
+      return { id: e.id, nome: e.nome, descanso: e.descanso, bi: !!e.bi, obs: e.obs || '', nota: e.nota || '', videoId: e.videoId || '', subs: e.subs || [],
+        meta: clone(e.series), prev: prevTxt(pe), sets: setsIniciais(e.series, pe) }; }) };
+  abaT = 0; salvarAtivo(true); go('treino'); wake(true);
 }
+let abaT = 0;
+const passos = () => grupos(S.ativo.itens);
+const passoFeito = g => g.every(i => S.ativo.itens[i].sets.every(s => s.done));
+const rodadaFeita = (g, j) => g.every(i => !S.ativo.itens[i].sets[j] || S.ativo.itens[i].sets[j].done);
+const nRodadas = g => Math.max(...g.map(i => S.ativo.itens[i].sets.length));
+function rodadaAtual(g) { for (let j = 0; j < nRodadas(g); j++) if (!rodadaFeita(g, j)) return j; return -1; }
+const LET = ['A', 'B', 'C', 'D'], COR = ['#a35ddc', '#3b82f6', '#f59e0b', '#14b8a6'];
+const thumbHTML = (vid, letra, cor) => `<div class="thumb">${vid ? `<img src="https://i.ytimg.com/vi/${esc(vid)}/mqdefault.jpg" alt="" loading="lazy" onerror="this.remove()">` : `<svg viewBox="0 0 24 24" width="40" fill="none" stroke="#8b929b" stroke-width="1.4"><circle cx="12" cy="5" r="2"/><path d="M12 7v7M12 9l-5 2M12 9l6-1M12 14l-3 6M12 14l3 6"/></svg>`}
+  ${letra ? `<span class="badge" style="background:${cor}">${letra}</span>` : '<span class="play">▶</span>'}</div>`;
+
 function vTreino() {
   const T = S.ativo;
-  if (!T) { setHdr('Escolha uma ficha', 'Treinar');
+  document.body.classList.toggle('emtreino', !!T);
+  if (!T) { $('tBar').style.display = 'none'; setHdr('Escolha uma ficha', 'Treinar');
     $('view').innerHTML = S.fichas.length ? S.fichas.map(f => { const st = statusValidade(f); return `<div class="card"><div class="row"><div class="row left" style="gap:12px"><span class="tag">${esc(f.letra)}</span><div><b>${esc(f.nome)}</b><div class="mut">${f.itens.length} exercícios</div></div></div>
       <button class="btn sm" onclick="A.iniciar('${f.id}')">Iniciar</button></div>${st && st.cls ? `<div style="margin-top:10px"><span class="chip ${st.cls}">${st.txt}</span></div>` : ''}</div>`; }).join('')
       : `<div class="empty"><b>Nenhuma ficha</b>Crie uma ficha primeiro.</div><button class="btn" onclick="A.go('prompt')">✨ Cadastrar por texto</button>`;
     return; }
-  setHdr(`Treino ${T.letra} · ${mmss(Math.floor((Date.now() - T.inicio) / 1000))}`, T.nome);
-  const card = i => { const e = T.itens[i]; return `<div class="ex">
-      <div class="row" style="align-items:flex-start"><div style="min-width:0"><h3>${esc(e.nome)}</h3>
-        <div class="mut">Meta: ${esc(resumoSeries(e.meta))} · desc. ${e.descanso}s</div>${e.obs ? `<div class="mut" style="color:var(--warn)">${esc(e.obs)}</div>` : ''}</div>
-        <button class="btn sm ghost" style="flex-shrink:0" onclick="A.abrirSubs(${i})">⇄ Trocar</button></div>
-      <table><tr><th>Série</th><th>Anterior</th><th>kg</th><th>Reps</th><th></th></tr>
-      ${e.sets.map((s, j) => `<tr class="${s.done ? 'done' : ''}" id="r${i}_${j}"><td>${j + 1}</td><td class="prev">${esc(e.prev[j] || '—')}</td>
-        <td><input inputmode="decimal" value="${s.kg === '' ? '' : esc(String(s.kg).replace('.', ','))}" placeholder="kg" onchange="A.setSet(${i},${j},'kg',this.value)"></td>
-        <td><input inputmode="numeric" value="${esc(s.reps)}" onchange="A.setSet(${i},${j},'reps',this.value)"></td>
-        <td><button class="chk" onclick="A.marcar(${i},${j})">✓</button></td></tr>`).join('')}
-      </table>
-      <div class="row" style="margin-top:4px"><button class="link" onclick="A.addSerie(${i})">+ série</button>${e.sets.length > 1 ? `<button class="link" onclick="A.remSerie(${i})">− série</button>` : ''}</div>
-    </div>`; };
-  $('view').innerHTML = `<div class="mut" id="prog" style="margin-bottom:10px"></div>` + grupos(T.itens).map(g => g.length > 1
-      ? `<div class="card"><div class="grp"><span class="chip bi" style="white-space:normal;display:inline-block">Bi-set · alterne os exercícios, descanse no fim da rodada</span><div style="margin-top:10px">${g.map(card).join('')}</div></div></div>`
-      : `<div class="card">${card(g[0])}</div>`).join('') + `
-    <button class="btn" onclick="A.finalizar()">Finalizar treino</button>
-    <button class="btn bad" style="margin-top:10px" onclick="A.descartar()">Descartar treino</button>`;
-  progresso();
-}
-function progresso() { const T = S.ativo; if (!T) return; const f = T.itens.reduce((a, e) => a + e.sets.filter(s => s.done).length, 0), t = T.itens.reduce((a, e) => a + e.sets.length, 0); const el = $('prog'); if (el) el.textContent = `${f} de ${t} séries concluídas`; }
-function setSet(i, j, k, v) { const s = S.ativo.itens[i].sets[j]; s[k] = k === 'kg' ? kgOuVazio(v) : (parseInt(v) || 0); salvarAtivo(); }
-function addSerie(i) { const e = S.ativo.itens[i]; const l = e.sets.at(-1); e.sets.push({ kg: l ? l.kg : '', reps: l ? l.reps : 10, done: false }); salvarAtivo(); keepScroll(vTreino); }
-function remSerie(i) { S.ativo.itens[i].sets.pop(); salvarAtivo(); keepScroll(vTreino); }
-function marcar(i, j) {
-  destravarAudio();
-  const T = S.ativo, e = T.itens[i], s = e.sets[j]; s.done = !s.done;
-  $(`r${i}_${j}`)?.classList.toggle('done', s.done); progresso();
-  if (s.done) {
-    const g = grupos(T.itens).find(g => g.includes(i));
-    const rodadaOk = g.every(k => !T.itens[k].sets[j] || T.itens[k].sets[j].done);
-    const tudo = T.itens.every(x => x.sets.every(y => y.done));
-    if (!rodadaOk) { const prox = g.find(k => k !== i && T.itens[k].sets[j] && !T.itens[k].sets[j].done); toast(`Agora: ${T.itens[prox].nome} (série ${j + 1})`); }
-    else if (!tudo) { const desc = Math.max(...g.map(k => T.itens[k].descanso || 0)); if (desc > 0) startT(desc); }
-    else toast('Todas as séries concluídas! Finalize o treino 💪');
+  $('tBar').style.display = 'block';
+  const P = passos();
+  if (T.passo >= P.length) return vFimTreino();
+  const g = P[T.passo];
+  const totalS = T.itens.reduce((a, e) => a + e.sets.length, 0), feitas = T.itens.reduce((a, e) => a + e.sets.filter(s => s.done).length, 0);
+  let h = `<div class="ttop"><button onclick="A.go('fichas')" aria-label="Minimizar">⌄</button><div><b>Treino ${esc(T.letra)} · ${esc(T.nome)}</b><small id="tClock"></small></div><button onclick="A.listaPassos()" aria-label="Exercícios">☰</button></div>
+    <div class="tprog"><i style="width:${totalS ? feitas / totalS * 100 : 0}%"></i></div>`;
+  if (g.length === 1) {
+    const i = g[0], e = T.itens[i];
+    h += `<div class="exhead" onclick="A.abrirExercicio(${i})">${thumbHTML(e.videoId)}<div style="flex:1;min-width:0"><div class="mut" style="font-size:12px">${T.passo + 1} / ${P.length}</div><h3>${esc(e.nome)}</h3></div><span class="info">ⓘ</span></div>`;
+  } else {
+    h += `<div class="combo"><div class="rows">${g.map((i, k) => { const e = T.itens[i]; return `<div class="r" onclick="A.abrirExercicio(${i})">${thumbHTML(e.videoId, LET[k], COR[k])}
+      <div style="flex:1;min-width:0"><div class="mut" style="font-size:12px">${T.passo + 1} / ${P.length}</div><h3>${esc(e.nome)}</h3></div><span class="info">ⓘ</span></div>`; }).join('')}</div><div class="side">${g.length === 2 ? 'BI-SET' : 'TRI-SET'}</div></div>`;
   }
-  salvarAtivo();
+  const notas = g.filter(i => T.itens[i].obs);
+  if (notas.length) h += `<div class="notes"><small>Notas do treino</small>${notas.map(i => `${g.length > 1 ? `<b>${esc(T.itens[i].nome)}:</b> ` : ''}${esc(T.itens[i].obs)}`).join('<br>')}</div>`;
+  h += `<div class="tabs"><button class="${abaT === 0 ? 'on' : ''}" onclick="A.abaT(0)">Séries</button><button class="${abaT === 1 ? 'on' : ''}" onclick="A.abaT(1)">Comentários</button></div>`;
+  if (abaT === 0) {
+    const cur = rodadaAtual(g), desc = Math.max(...g.map(i => T.itens[i].descanso || 0));
+    h += `<div class="tmeta">${g.length === 1 ? 'Meta: ' + esc(resumoSeries(T.itens[g[0]].meta)) : g.map((i, k) => LET[k] + ': ' + esc(resumoSeries(T.itens[i].meta))).join(' · ')}${desc ? ` · descanso ${desc}s${g.length > 1 ? ' após a rodada' : ''}` : ''}</div>
+      <div class="rhead"><span></span><div class="ln"><span></span><span>kg</span><span></span><span>Reps</span><span></span></div></div>`;
+    for (let j = 0; j < nRodadas(g); j++) {
+      const feita = rodadaFeita(g, j);
+      h += `<div class="round ${feita ? 'done' : j === cur ? 'cur' : ''}"><button class="n" onclick="A.toggleRodada(${j})">${feita ? '✓' : j + 1}</button><div class="box">${g.map((i, k) => { const s = T.itens[i].sets[j]; if (!s) return '';
+        return `<div class="ln">${g.length > 1 ? `<span class="b" style="background:${COR[k]}">${LET[k]}</span>` : '<span></span>'}
+          <input inputmode="decimal" value="${s.kg === '' ? '' : esc(String(s.kg).replace('.', ','))}" placeholder="kg" onchange="A.setSet(${i},${j},'kg',this.value)"><span class="x">×</span>
+          <input inputmode="numeric" value="${esc(s.reps)}" onchange="A.setSet(${i},${j},'reps',this.value)">
+          <button class="mini" onclick="A.menuSerie(${i},${j})">⋮</button><span></span><div class="pv">anterior: ${esc(T.itens[i].prev[j] || '—')}</div></div>`; }).join('')}</div></div>`;
+    }
+    h += `<button class="add" onclick="A.addRodada()">+ Adicionar ${g.length > 1 ? 'rodada' : 'série'}</button>`;
+  } else {
+    h += g.map((i, k) => `<label class="f">${g.length > 1 ? LET[k] + ' · ' : ''}${esc(T.itens[i].nome)}</label><textarea class="in" style="min-height:90px" placeholder="Anotação (ex.: banco no furo 3, pegada aberta)" oninput="A.setNota(${i},this.value)">${esc(T.itens[i].nota)}</textarea>`).join('')
+      + `<div class="mut" style="margin-top:6px">Fica salva na ficha e aparece nos próximos treinos.</div>`;
+  }
+  $('view').innerHTML = h;
+  atualizarBotaoTreino(); relogio(); prefetchPasso(g);
+}
+function atualizarBotaoTreino() {
+  const T = S.ativo, b = $('tMain'); if (!T || !b) return; const P = passos();
+  if (T.passo >= P.length) { b.textContent = 'Salvar treino'; b.className = 'btn tnext'; return; }
+  const g = P[T.passo];
+  if (passoFeito(g)) { const resta = P.some((x, k) => k !== T.passo && !passoFeito(x)); b.textContent = resta ? 'Próximo exercício →' : 'Finalizar treino ✓'; b.className = 'btn tnext'; }
+  else { b.textContent = `Registrar série ${rodadaAtual(g) + 1}${g.length > 1 ? ' (' + g.map((_, k) => LET[k]).join(' + ') + ')' : ''}`; b.className = 'btn'; }
+}
+function relogio() { const el = $('tClock'); if (el && S.ativo) { const P = passos(); el.textContent = `${mmss(Math.floor((Date.now() - S.ativo.inicio) / 1000))} · exercício ${Math.min(S.ativo.passo + 1, P.length)} de ${P.length}`; } }
+setInterval(() => { if (rota === 'treino' && S.ativo) relogio(); }, 1000);
+function acaoTreino() {
+  destravarAudio();
+  const T = S.ativo; const P = passos();
+  if (T.passo >= P.length) return finalizar();
+  const g = P[T.passo];
+  if (passoFeito(g)) return proximoPasso();
+  const j = rodadaAtual(g); g.forEach(i => { const s = T.itens[i].sets[j]; if (s) s.done = true; });
+  if (passoFeito(g)) { stopT(); toast(P.some(x => !passoFeito(x)) ? 'Exercício concluído! 💪' : 'Todas as séries concluídas! 💪'); }
+  else { const d = Math.max(...g.map(i => T.itens[i].descanso || 0)); if (d > 0) startT(d); }
+  salvarAtivo(); keepScroll(vTreino);
+}
+function proximoPasso() {
+  const T = S.ativo, P = passos(); stopT(); abaT = 0;
+  T.pulados = (T.pulados || []).filter(k => k !== T.passo);
+  let n = P.findIndex((g, k) => k > T.passo && !passoFeito(g) && !T.pulados.includes(k));
+  if (n < 0) n = P.findIndex(g => !passoFeito(g)); // volta aos pulados
+  T.passo = n < 0 ? P.length : n; salvarAtivo(); go('treino');
+}
+function toggleRodada(j) {
+  const g = passos()[S.ativo.passo]; const feita = rodadaFeita(g, j);
+  g.forEach(i => { const s = S.ativo.itens[i].sets[j]; if (s) s.done = !feita; });
+  salvarAtivo(); keepScroll(vTreino);
+}
+function setSet(i, j, k, v) { const s = S.ativo.itens[i].sets[j]; s[k] = k === 'kg' ? kgOuVazio(v) : (parseInt(v) || 0); salvarAtivo(); }
+function addRodada() { const g = passos()[S.ativo.passo]; g.forEach(i => { const e = S.ativo.itens[i]; const l = e.sets.at(-1); e.sets.push({ kg: l ? l.kg : '', reps: l ? l.reps : 10, done: false }); }); salvarAtivo(); keepScroll(vTreino); }
+function menuSerie(i, j) {
+  const s = S.ativo.itens[i].sets[j];
+  openModal(`<h2>Série ${j + 1} · ${esc(S.ativo.itens[i].nome)}</h2>
+    <div class="mi" onclick="A.closeModal();A.toggleRodada(${j})"><span>${s.done ? '↺' : '✓'}</span>${s.done ? 'Desfazer registro' : 'Marcar como feita'}</div>
+    <div class="mi bad" onclick="A.removerSerieT(${i},${j})"><span>✕</span>Remover esta série</div>
+    <button class="btn ghost" style="margin-top:14px" onclick="A.closeModal()">Cancelar</button>`);
+}
+function removerSerieT(i, j) { const e = S.ativo.itens[i]; if (e.sets.length <= 1) return toast('O exercício precisa de pelo menos 1 série'); e.sets.splice(j, 1); e.prev.splice(j, 1); closeModal(); salvarAtivo(); keepScroll(vTreino); }
+let notaT = null;
+function setNota(i, v) {
+  const e = S.ativo.itens[i]; e.nota = v; salvarAtivo(); clearTimeout(notaT);
+  notaT = setTimeout(() => { const f = S.fichas.find(x => x.id === S.ativo?.fichaId); const fi = f?.itens.find(x => x.id === e.id); if (fi && fi.nota !== v) { fi.nota = v; salvarFicha_(f); } }, 800);
+}
+function menuTreino() {
+  const T = S.ativo, P = passos(); if (T.passo >= P.length) return;
+  const g = P[T.passo];
+  openModal(`<h2>Opções</h2>
+    ${g.map((i, k) => `<div class="mi" onclick="A.closeModal();A.abrirExercicio(${i})"><span>▶</span>Ver vídeo${g.length > 1 ? ' · ' + LET[k] : ''}</div>`).join('')}
+    ${g.map((i, k) => `<div class="mi" onclick="A.closeModal();A.abrirSubs(${i})"><span>⇄</span>Trocar exercício${g.length > 1 ? ' ' + LET[k] + ' (' + esc(T.itens[i].nome) + ')' : ''}</div>`).join('')}
+    <div class="mi" onclick="A.pularPasso()"><span>⏭</span>Pular exercício<span class="mut" style="margin-left:auto;width:auto">volta no fim</span></div>
+    <div class="mi" onclick="A.closeModal();A.listaPassos()"><span>☰</span>Ver todos os exercícios</div>
+    <div class="mi" onclick="A.closeModal();A.finalizar()"><span>✓</span>Encerrar treino e salvar</div>
+    <div class="mi bad" onclick="A.closeModal();A.descartar()"><span>🗑</span>Descartar treino</div>`);
+}
+function pularPasso() {
+  closeModal(); const T = S.ativo, P = passos(); stopT(); abaT = 0;
+  T.pulados = [...new Set([...(T.pulados || []), T.passo])];
+  let n = P.findIndex((g, k) => k > T.passo && !passoFeito(g) && !T.pulados.includes(k));
+  if (n < 0) n = P.findIndex((g, k) => k !== T.passo && !passoFeito(g));
+  T.passo = n < 0 ? P.length : n; salvarAtivo(); go('treino'); toast('Exercício pulado — fica pendente na lista');
+}
+function listaPassos() {
+  const T = S.ativo, P = passos();
+  openModal(`<h2>Exercícios do treino</h2><div class="mut" style="margin-bottom:8px">Toque para ir direto a um exercício.</div>` + P.map((g, k) => {
+    const st = passoFeito(g) ? 'done' : k === T.passo ? 'cur' : (T.pulados || []).includes(k) ? 'skip' : '';
+    return `<div class="li ${st}" onclick="A.irPasso(${k})"><div class="st">${st === 'done' ? '✓' : st === 'skip' ? '!' : k + 1}</div><div style="flex:1"><div>${g.map(i => esc(T.itens[i].nome)).join(' + ')}</div>
+      <div class="mut" style="font-size:12px">${st === 'done' ? 'Concluído' : st === 'skip' ? 'Pulado' : st === 'cur' ? 'Em andamento' : esc(resumoSeries(T.itens[g[0]].meta))}</div></div></div>`; }).join('')
+    + `<button class="btn ghost" style="margin-top:14px" onclick="A.closeModal()">Fechar</button>`);
+}
+function irPasso(k) { closeModal(); stopT(); abaT = 0; S.ativo.passo = k; salvarAtivo(); go('treino'); }
+function vFimTreino() {
+  const T = S.ativo, P = passos(); const pend = P.filter(g => !passoFeito(g)).length;
+  const tot = T.itens.reduce((a, e) => a + e.sets.length, 0), f = T.itens.reduce((a, e) => a + e.sets.filter(s => s.done).length, 0);
+  $('view').innerHTML = `<div class="ttop"><button onclick="A.go('fichas')">⌄</button><div><b>Treino ${esc(T.letra)} · ${esc(T.nome)}</b><small id="tClock"></small></div><button onclick="A.listaPassos()">☰</button></div>
+    <div class="empty" style="padding-top:50px"><div style="font-size:44px">💪</div><b style="font-size:22px;margin:10px 0">Treino concluído!</b>
+    ${mmss(Math.floor((Date.now() - T.inicio) / 1000))} · ${f} de ${tot} séries${pend ? ` · ${pend} exercício${pend > 1 ? 's' : ''} não feito${pend > 1 ? 's' : ''}` : ''}</div>
+    ${pend ? `<button class="btn ghost" onclick="A.irPasso(${P.findIndex(g => !passoFeito(g))})">Voltar aos pendentes</button>` : ''}`;
+  atualizarBotaoTreino(); relogio();
 }
 function finalizar() {
   const T = S.ativo;
   const ex = T.itens.map(e => ({ nome: e.nome, bi: e.bi, sets: e.sets.filter(s => s.done).map(s => ({ kg: s.kg === '' ? 0 : num(s.kg), reps: parseInt(s.reps) || 0 })) })).filter(e => e.sets.length);
-  if (!ex.length) { if (confirm('Nenhuma série foi marcada. Descartar o treino?')) descartar(true); return; }
-  if (!confirm('Finalizar e salvar este treino?')) return;
+  if (!ex.length) { if (confirm('Nenhuma série foi registrada. Descartar o treino?')) descartar(true); return; }
+  if (!confirm('Encerrar e salvar este treino?')) return;
   const sess = { id: uid(), fichaId: T.fichaId, letra: T.letra, nome: T.nome, inicio: T.inicio, fim: Date.now(), ex };
   S.sessoes.unshift(sess); salvarSessao_(sess);
-  S.ativo = null; stopT(); wake(false); salvarAtivo(true); go('evolucao'); toast('Treino salvo 💪');
+  S.ativo = null; stopT(); wake(false); salvarAtivo(true); document.body.classList.remove('emtreino'); go('evolucao'); toast('Treino salvo 💪');
 }
-function descartar(sem) { if (!sem && !confirm('Descartar este treino sem salvar?')) return; S.ativo = null; stopT(); wake(false); salvarAtivo(true); go('treino'); }
+function descartar(sem) { if (!sem && !confirm('Descartar este treino sem salvar?')) return; S.ativo = null; stopT(); wake(false); salvarAtivo(true); document.body.classList.remove('emtreino'); go('treino'); }
 
 // ---------- Substituições ----------
 function abrirSubs(i) {
@@ -591,7 +698,7 @@ function listaSubs(i) {
 async function gerarSubs(i) {
   const e = S.ativo.itens[i], b = $('gerarSubs'); b.disabled = true; b.innerHTML = '<span class="spin"></span>';
   try {
-    const m = await iaSubstitutos([e.nome]); e.subs = m[e.nome.toLowerCase()] || Object.values(m)[0] || [];
+    const det = await detalhesExercicio(e.nome, true); e.subs = det?.subs || [];
     if (!e.subs.length) throw new Error('sem sugestões');
     salvarAtivo();
     const f = S.fichas.find(x => x.id === S.ativo.fichaId); const fi = f?.itens.find(x => x.id === e.id && x.nome === e.nome);
@@ -603,31 +710,36 @@ function trocarOutro(i) { const n = $('subOutro').value.trim(); if (!n) return t
 const trocar = (i, k, naFicha) => aplicarTroca(i, S.ativo.itens[i].subs[k], naFicha);
 function aplicarTroca(i, novo, naFicha) {
   const e = S.ativo.itens[i], antigo = e.nome;
-  e.nome = novo; e.subs = [antigo, ...e.subs.filter(x => x !== novo && x !== antigo)].slice(0, 3);
+  e.nome = novo; e.subs = [antigo, ...e.subs.filter(x => x !== novo && x !== antigo)].slice(0, 3); e.videoId = '';
   const pe = ultimoDoExercicio(novo); e.prev = prevTxt(pe);
   e.sets.forEach((s, j) => { if (!s.done) s.kg = pe?.sets[j]?.kg ?? pe?.sets.at(-1)?.kg ?? ''; });
   salvarAtivo();
   if (naFicha) { const f = S.fichas.find(x => x.id === S.ativo.fichaId); const fi = f?.itens.find(x => x.id === e.id);
-    if (fi) { fi.nome = novo; fi.subs = e.subs; fi.series = fi.series.map(s => ({ reps: s.reps, kg: '' })); salvarFicha_(f); } }
+    if (fi) { fi.nome = novo; fi.subs = e.subs; fi.videoId = ''; fi.series = fi.series.map(s => ({ reps: s.reps, kg: '' })); salvarFicha_(f); } }
   closeModal(); keepScroll(vTreino); toast(`Trocado por ${novo}${naFicha ? ' (também na ficha)' : ' (só hoje)'}`);
 }
 
 // ================= Timer de descanso =================
 let tEnd = 0, tInt = null, actx = null;
+const emTreinoUI = () => rota === 'treino' && !!S.ativo;
 function startT(s) { tEnd = Date.now() + s * 1000; if (S.ativo) { S.ativo.restEnd = tEnd; salvarAtivo(); } mostrarTimer(); }
 function retomarTimer(end) { tEnd = end; mostrarTimer(); }
-function mostrarTimer() { $('timer').classList.add('show'); $('tmLbl').textContent = 'DESCANSO'; clearInterval(tInt); tInt = setInterval(tick, 250); tick(); }
-function addT(s) { tEnd = Math.max(Date.now() + 1000, tEnd + s * 1000); if (S.ativo) { S.ativo.restEnd = tEnd; salvarAtivo(); } tick(); }
-function pararTimerUI() { clearInterval(tInt); tInt = null; tEnd = 0; $('timer').classList.remove('show'); }
+function mostrarTimer() { $('tmLbl').textContent = 'DESCANSO'; clearInterval(tInt); tInt = setInterval(tick, 250); tick(); }
+function addT(s) { if (!tEnd) return; tEnd = Math.max(Date.now() + 1000, tEnd + s * 1000); if (S.ativo) { S.ativo.restEnd = tEnd; salvarAtivo(); } tick(); }
+function pararTimerUI() { clearInterval(tInt); tInt = null; tEnd = 0; $('timer').classList.remove('show'); $('tRest').style.display = 'none'; }
 function stopT() { pararTimerUI(); if (S.ativo?.restEnd) { delete S.ativo.restEnd; salvarAtivo(); } }
-function tick() { const left = Math.ceil((tEnd - Date.now()) / 1000); if (left <= 0) return fimDescanso(); $('tm').textContent = mmss(left); }
+function tick() {
+  const left = Math.ceil((tEnd - Date.now()) / 1000); if (left <= 0) return fimDescanso();
+  const em = emTreinoUI(); $('timer').classList.toggle('show', !em); $('tRest').style.display = em ? 'flex' : 'none';
+  $('tm').textContent = mmss(left); $('tRt').textContent = mmss(left);
+}
 function fimDescanso() {
   clearInterval(tInt); tInt = null; tEnd = 0; if (S.ativo?.restEnd) { delete S.ativo.restEnd; salvarAtivo(); }
-  $('tmLbl').textContent = 'BORA!'; $('tm').textContent = '00:00';
+  $('tmLbl').textContent = 'BORA!'; $('tm').textContent = '00:00'; $('tRt').textContent = 'BORA!';
   bip(); if (navigator.vibrate) navigator.vibrate([300, 150, 300, 150, 300]);
   if (document.hidden && 'Notification' in window && Notification.permission === 'granted' && navigator.serviceWorker?.controller)
     navigator.serviceWorker.ready.then(r => r.showNotification('Descanso acabou', { body: 'Próxima série!', tag: 'descanso', renotify: true, vibrate: [300, 150, 300], icon: 'icon-192.png' }));
-  setTimeout(() => { if (!tInt) $('timer').classList.remove('show'); }, 2500);
+  setTimeout(() => { if (!tInt) { $('timer').classList.remove('show'); $('tRest').style.display = 'none'; } }, 2500);
 }
 function destravarAudio() { try { if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)(); if (actx.state === 'suspended') actx.resume(); } catch (e) {} }
 function bip() { try { if (!actx) return; const t0 = actx.currentTime;
@@ -637,7 +749,103 @@ function bip() { try { if (!actx) return; const t0 = actx.currentTime;
 let wl = null;
 async function wake(on) { try { if (on && S.ativo && 'wakeLock' in navigator && !document.hidden) { if (!wl) { wl = await navigator.wakeLock.request('screen'); wl.addEventListener('release', () => wl = null); } }
   else if (!on && wl) { await wl.release(); wl = null; } } catch (e) {} }
-setInterval(() => { if (rota === 'treino' && S.ativo) $('sub').textContent = `Treino ${S.ativo.letra} · ${mmss(Math.floor((Date.now() - S.ativo.inicio) / 1000))}`; }, 1000);
+
+// ================= Tela do exercício (vídeo, execução, músculos) =================
+// Catálogo compartilhado entre usuários: catalogo/{slug} = {nome, videos:[{id,t}], dicas[], erros[], principais[], secundarios[], subs[], em}
+const slug = n => String(n).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 120) || 'x';
+const catCache = {};
+async function lerCatalogo(nome) {
+  const k = slug(nome); if (catCache[k]) return catCache[k];
+  try { const d = await getDoc(doc(db, 'catalogo', k)); catCache[k] = d.exists() ? d.data() : { nome }; } catch (e) { catCache[k] = { nome }; }
+  return catCache[k];
+}
+function gravarCatalogo(nome, dados) {
+  const k = slug(nome); catCache[k] = { ...(catCache[k] || {}), ...dados, nome };
+  setDoc(doc(db, 'catalogo', k), { ...dados, nome, em: Date.now() }, { merge: true }).catch(e => console.warn('catalogo', e));
+}
+async function buscarVideosYT(nome) {
+  if (!YOUTUBE_API_KEY || !navigator.onLine) return [];
+  const q = encodeURIComponent(`${nome} execução correta`);
+  const r = await fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=5&videoEmbeddable=true&safeSearch=strict&relevanceLanguage=pt&regionCode=BR&q=${q}&key=${YOUTUBE_API_KEY}`);
+  if (!r.ok) throw new Error('YouTube ' + r.status + (r.status === 403 ? ' (chave/domínio ou cota)' : ''));
+  const j = await r.json();
+  return (j.items || []).filter(x => x.id?.videoId).map(x => ({ id: x.id.videoId, t: String(x.snippet?.title || '').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&').slice(0, 120) }));
+}
+const buscandoVid = new Set();
+async function garantirVideos(nome) {
+  const c = await lerCatalogo(nome); if (c.videos?.length) return c.videos;
+  const k = slug(nome); if (buscandoVid.has(k)) return []; buscandoVid.add(k);
+  try { const v = await buscarVideosYT(nome); if (v.length) gravarCatalogo(nome, { videos: v }); return v; }
+  catch (e) { console.warn(e); return []; } finally { buscandoVid.delete(k); }
+}
+async function detalhesExercicio(nome, forcar) {
+  const c = await lerCatalogo(nome); if (c.dicas?.length && c.principais && !forcar) return c;
+  if (!navigator.onLine) return c;
+  const m = (await iaDetalhes([nome]))[nome.toLowerCase()]; if (m) gravarCatalogo(nome, m);
+  return catCache[slug(nome)];
+}
+// pré-carrega vídeo do passo atual (thumbnail) sem travar a tela
+function prefetchPasso(g) {
+  g.forEach(async i => { const e = S.ativo?.itens[i]; if (!e || e.videoId) return;
+    const v = await garantirVideos(e.nome); const e2 = S.ativo?.itens[i];
+    if (v[0] && e2 && e2.nome === e.nome && !e2.videoId) { e2.videoId = v[0].id; salvarAtivo(); if (rota === 'treino') keepScroll(vTreino); } });
+}
+let exAberto = null, abaEx = 0;
+function abrirExercicio(i) {
+  const e = S.ativo.itens[i]; exAberto = { i, nome: e.nome }; abaEx = 0;
+  $('exTela').classList.add('show'); renderExercicio();
+  if (!e.videoId) garantirVideos(e.nome).then(v => { if (v[0] && exAberto?.nome === e.nome && !S.ativo.itens[i].videoId) { S.ativo.itens[i].videoId = v[0].id; salvarAtivo(); renderExercicio(); } });
+  detalhesExercicio(e.nome).then(() => { if (exAberto?.nome === e.nome) renderExercicio(true); }).catch(() => {});
+}
+function fecharExercicio() { $('exTela').classList.remove('show'); $('exVideo').innerHTML = ''; exAberto = null; if (rota === 'treino') keepScroll(vTreino); }
+function renderExercicio(soCorpo) {
+  if (!exAberto || !S.ativo) return; const e = S.ativo.itens[exAberto.i]; const c = catCache[slug(e.nome)] || {};
+  $('exNome').textContent = e.nome;
+  if (!soCorpo) $('exVideo').innerHTML = e.videoId
+    ? `<iframe src="https://www.youtube-nocookie.com/embed/${esc(e.videoId)}?playsinline=1&rel=0" title="Vídeo de execução" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`
+    : `<div class="semvid">${navigator.onLine ? (YOUTUBE_API_KEY ? '<span class="spin"></span>Buscando vídeo…' : 'Busca automática desativada (sem chave do YouTube).<br>') : 'Sem internet — o vídeo aparece quando conectar.'}
+       <a class="btn sm ghost" style="margin-top:10px" target="_blank" rel="noopener" href="https://www.youtube.com/results?search_query=${encodeURIComponent(e.nome + ' execução')}">Buscar no YouTube</a></div>`;
+  document.querySelectorAll('#exTabs button').forEach((b, k) => b.classList.toggle('on', k === abaEx));
+  let h = '';
+  if (abaEx === 0) {
+    const n = e.nome.toLowerCase(); const pts = S.sessoes.filter(s => s.ex.some(x => x.nome.toLowerCase() === n)).slice(0, 12).reverse()
+      .map(s => ({ t: s.inicio, v: Math.max(...s.ex.filter(x => x.nome.toLowerCase() === n).flatMap(x => x.sets.map(y => y.kg))), sets: s.ex.filter(x => x.nome.toLowerCase() === n).flatMap(x => x.sets) }));
+    if (!pts.length) h = `<div class="mut">Ainda não há registros deste exercício. O gráfico aparece depois do primeiro treino.</div>`;
+    else {
+      const rec = Math.max(...pts.map(p => p.v));
+      h = `<b>Carga máxima</b>${pts.length > 1 ? linhaSVG(pts.map(p => p.v), 'kg', pts.map(p => new Date(p.t).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }))) : ''}
+        <div class="mut">Recorde: ${fmtKg(rec)} kg</div>
+        <div class="card" style="margin-top:12px"><b>Histórico</b><div class="mut" style="margin-top:6px;line-height:1.8">${[...pts].reverse().slice(0, 6).map(p => `${new Date(p.t).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} · ${p.sets.map(x => fmtKg(x.kg) + '×' + x.reps).join(', ')}`).join('<br>')}</div></div>`;
+    }
+  } else if (abaEx === 1) {
+    h = c.dicas?.length ? `<b>Como fazer</b><ol class="dicas">${c.dicas.map(d => `<li>${esc(d)}</li>`).join('')}</ol>${c.erros?.length ? `<div class="card" style="margin-top:12px"><b>Erros comuns</b><div class="mut" style="margin-top:6px">${c.erros.map(esc).join(' · ')}</div></div>` : ''}<div class="mut" style="font-size:12px;margin-top:8px">Dicas geradas por IA — na dúvida, confirme com seu professor.</div>`
+      : `<div class="mut">${navigator.onLine ? '<span class="spin"></span>Gerando dicas…' : 'Sem internet para gerar as dicas.'}</div>`;
+  } else {
+    const subs = e.subs?.length ? e.subs : (c.subs || []);
+    h = c.principais ? `<b>Principais</b><div style="margin:6px 0 12px">${c.principais.map(m => `<span class="chip" style="background:#c6f43222;color:var(--ac);margin:2px">${esc(m)}</span>`).join('')}</div>
+      ${c.secundarios?.length ? `<b>Secundários</b><div style="margin-top:6px">${c.secundarios.map(m => `<span class="chip" style="margin:2px">${esc(m)}</span>`).join('')}</div>` : ''}`
+      : `<div class="mut">${navigator.onLine ? '<span class="spin"></span>Carregando…' : 'Sem internet.'}</div>`;
+    if (subs.length) h += `<div class="mut" style="margin-top:16px">Substitutos: ${subs.map(esc).join(' · ')}</div>`;
+  }
+  $('exBody').innerHTML = h;
+}
+const abaExercicio = k => { abaEx = k; renderExercicio(true); };
+async function trocarVideo() {
+  if (!exAberto) return; const e = S.ativo.itens[exAberto.i]; const vids = await garantirVideos(e.nome);
+  openModal(`<h2>Trocar vídeo</h2><div class="mut" style="margin-bottom:6px">Opções encontradas no YouTube:</div>
+    ${vids.length ? vids.map(v => `<div class="vopt ${v.id === e.videoId ? 'on' : ''}" onclick="A.escolherVideo('${esc(v.id)}')"><img src="https://i.ytimg.com/vi/${esc(v.id)}/default.jpg" alt=""><div><div style="font-size:14px">${esc(v.t)}</div><div class="mut" style="font-size:12px">${v.id === e.videoId ? 'Em uso' : 'Toque para usar'}</div></div></div>`).join('')
+      : `<div class="mut">${YOUTUBE_API_KEY ? 'Nenhum vídeo encontrado (ou sem internet).' : 'Busca automática desativada: falta a chave do YouTube no config.js.'}</div>`}
+    <label class="f">Ou cole um link do YouTube (ex.: vídeo do seu professor)</label>
+    <div class="row"><input class="in" id="vLink" placeholder="https://youtu.be/..."><button class="btn sm" onclick="A.escolherVideo(null)">Usar</button></div>
+    <button class="btn ghost" style="margin-top:14px" onclick="A.closeModal()">Cancelar</button>`);
+}
+function idDoLink(u) { const m = String(u).match(/(?:youtu\.be\/|v=|shorts\/|embed\/|live\/)([A-Za-z0-9_-]{11})/); return m ? m[1] : (/^[A-Za-z0-9_-]{11}$/.test(u.trim()) ? u.trim() : null); }
+function escolherVideo(id) {
+  if (!id) { id = idDoLink($('vLink').value); if (!id) return toast('Link do YouTube inválido'); }
+  const e = S.ativo.itens[exAberto.i]; e.videoId = id; salvarAtivo();
+  const f = S.fichas.find(x => x.id === S.ativo.fichaId); f?.itens.forEach(x => { if (x.nome.toLowerCase() === e.nome.toLowerCase()) x.videoId = id; }); if (f) salvarFicha_(f);
+  closeModal(); renderExercicio(); toast('Vídeo salvo para este exercício');
+}
 
 // ================= Evolução =================
 let exSel = null;
@@ -969,7 +1177,9 @@ window.addEventListener('offline', () => { if (rota === 'fichas' || rota === 'aj
 
 // ================= Inicialização =================
 window.A = { go, editar, df, d, ds, toggleBi, moverEx, removerEx, addEx, addSerieDraft, removerSerie, cancelarEdicao, salvarFicha, excluirFicha,
-  setPrompt, usarExemplo, gerarDoPrompt, setImp, salvarImportado, iniciar, setSet, addSerie, remSerie, marcar, finalizar, descartar,
+  setPrompt, usarExemplo, gerarDoPrompt, setImp, salvarImportado, iniciar, setSet, finalizar, descartar,
+  acaoTreino, toggleRodada, addRodada, menuSerie, removerSerieT, setNota, menuTreino, pularPasso, listaPassos, irPasso,
+  abrirExercicio, fecharExercicio, abaExercicio, trocarVideo, escolherVideo, abaT: k => { abaT = k; keepScroll(vTreino); },
   abrirSubs, gerarSubs, trocar, trocarOutro, addT, stopT, setEx, toggleSess, excluirSessao, exportar, importarArquivo, setBackupDias,
   apagarTudo, migrar, naoMigrar, openModal, closeModal, baixarICS, sair, enviarAuth, verificarAtualizacao,
   novaAvaliacao, editarAvaliacao, av, avDobra, salvarAvaliacao, excluirAvaliacao, salvarCorpo,
@@ -979,7 +1189,7 @@ window.A = { go, editar, df, d, ds, toggleBi, moverEx, removerEx, addEx, addSeri
 if (!configurado) render();
 else onAuthStateChanged(auth, u => {
   S.user = u;
-  if (!u) { unsubs.forEach(x => x()); unsubs = []; S.fichas = []; S.sessoes = []; S.avaliacoes = []; S.ativo = null; pararTimerUI(); modoAuth = 'entrar'; render(); return; }
+  if (!u) { unsubs.forEach(x => x()); unsubs = []; S.fichas = []; S.sessoes = []; S.avaliacoes = []; S.ativo = null; document.body.classList.remove('emtreino'); $('tBar').style.display = 'none'; pararTimerUI(); modoAuth = 'entrar'; render(); return; }
   document.body.classList.remove('noauth'); rota = 'fichas'; primeiraCarga = true;
   S.pronto = { fichas: false, sessoes: false, perfil: false, ativo: false, avaliacoes: false };
   setHdr('', 'Treino'); $('view').innerHTML = '<div class="empty"><span class="spin"></span>Carregando seus treinos…</div>';

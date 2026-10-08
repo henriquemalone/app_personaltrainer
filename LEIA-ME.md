@@ -33,6 +33,18 @@ A configuração é feita uma vez só e leva uns 15 minutos.
 
 O reCAPTCHA não precisa de faturamento até 10 mil verificações por mês. Para uso pessoal, isso nunca chega perto do limite.
 
+## 4b. Vídeos dos exercícios (YouTube) — opcional
+1. Google Cloud (mesma conta do Firebase, projeto **AppPersonal**): https://console.cloud.google.com/apis/library/youtube.googleapis.com?project=apppersonal-df7d1 → **Ativar**.
+2. **APIs e serviços → Credenciais → Criar credenciais → Chave de API**.
+3. Clique na chave criada → **Restrições do aplicativo: Sites (referenciadores HTTP)** → adicione `henriquemalone.github.io/*`.
+   **Restrições de API: Restringir chave** → marque só **YouTube Data API v3** → **Salvar**.
+4. Cole a chave em `YOUTUBE_API_KEY` no `config.js`.
+Sem a chave, o app funciona normalmente; o botão do vídeo vira "Buscar no YouTube" e você pode colar links manualmente.
+
+## 4c. Regras do banco (atualizadas na v2.2)
+Firestore → **Regras** → substitua pelo conteúdo atual do `firestore.rules` → **Publicar**.
+(A v2.2 adicionou o catálogo compartilhado de exercícios: vídeos, dicas e músculos. Nenhum dado pessoal fica nele.)
+
 ## 5. Publicar
 Envie **todos os arquivos desta pasta** para o mesmo repositório da v1 (`app_personaltrainer`), substituindo os arquivos antigos: na aba Code, use **Add file → Upload files** e depois **Commit**.
 Mantenha o mesmo repositório e o mesmo endereço. Assim, ao abrir pelo ícone já instalado, o app encontra os dados da v1 e oferece enviá-los para a sua conta.
