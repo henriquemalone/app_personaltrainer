@@ -21,4 +21,4 @@ export const MODELO_IA = "gemini-3.5-flash";
 
 // Chave da YouTube Data API v3 (busca automática de vídeos de execução).
 // Restrinja a chave ao domínio henriquemalone.github.io no Google Cloud. Vazio = busca desativada.
-export const YOUTUBE_API_KEY = "";
+export const YOUTUBE_API_KEY = "AIzaSyDj7Ne2fUHHfr6Xiqi87sNlgUDkkuOJQ5U";
