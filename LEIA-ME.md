@@ -1,4 +1,4 @@
-# Treino v2 – configuração
+# Hyper Fit – configuração
 
 O app usa o **Firebase no plano gratuito Spark**, que não pede cartão. Do Firebase ele usa:
 
@@ -47,6 +47,26 @@ Firestore → **Regras** → substitua pelo conteúdo atual do `firestore.rules`
 
 ## Dieta (v2.3)
 Não precisa configurar nada novo: usa o mesmo Firebase e o mesmo Gemini. As regras do Firestore atuais já cobrem os dados da dieta.
+
+## Vendas (v2.6): teste grátis, assinatura e vitalício
+1. **config.js:** preencha `ADMIN_EMAIL` (o e-mail da SUA conta no app), `SUPORTE_WHATSAPP` (55 + DDD + número, só dígitos) e, se quiser, `SUPORTE_EMAIL`.
+2. **firestore.rules:** troque `SEU_EMAIL_AQUI` pelo mesmo e-mail do `ADMIN_EMAIL` → Firestore → Regras → cole → **Publicar**.
+3. **Liberar alguém:** no app, Ajustes → **⚙ Admin: liberar acessos** → e-mail da pessoa → Assinante (1/3/12 meses) ou **Vitalício** → Salvar. A pessoa é liberada na hora.
+   Renovação: escolha "1 mês" de novo; o prazo soma a partir do vencimento atual.
+4. Fluxo do cliente: cria conta (aceita os termos) → 7 dias grátis → paga pelo link do Mercado Pago → avisa no WhatsApp → você libera no Admin.
+5. Todo dia 1x: confira os pagamentos no Mercado Pago e libere/renove quem pagou. Assinatura cancelada = não renove; o acesso vence sozinho na data.
+
+## Domínio próprio (hypertreino.com.br)
+1. **Registrar:** registro.br → busque `hypertreino.com.br` → registre com seu CPF (≈ R$ 40/ano).
+2. **DNS no Registro.br:** no domínio → **DNS → Editar zona** (modo avançado) → adicione:
+   - 4 registros **A** com nome vazio (@): `185.199.108.153`, `185.199.109.153`, `185.199.110.153`, `185.199.111.153`
+   - 1 registro **CNAME** com nome `www` apontando para `henriquemalone.github.io`
+3. **GitHub:** repositório → Settings → Pages → **Custom domain** → `hypertreino.com.br` → Save. Quando o certificado sair (minutos a algumas horas), marque **Enforce HTTPS**.
+4. **Autorizar o domínio novo** (sem isso login, IA e vídeos falham no domínio novo):
+   - Firebase → Authentication → Configurações → **Domínios autorizados** → adicione `hypertreino.com.br` e `www.hypertreino.com.br`
+   - Google Cloud → Segurança → reCAPTCHA → chave do app → **Domínios** → adicione `hypertreino.com.br`
+   - Google Cloud → APIs e serviços → Credenciais → chave do YouTube → **Sites** → adicione `hypertreino.com.br/*` e `www.hypertreino.com.br/*`
+5. O endereço antigo (github.io) passa a redirecionar para o novo. Quem já instalou o app precisa **instalar de novo** pelo endereço novo e entrar na conta (os dados estão na nuvem, nada se perde).
 
 ## 5. Publicar
 Envie **todos os arquivos desta pasta** para o mesmo repositório da v1 (`app_personaltrainer`), substituindo os arquivos antigos: na aba Code, use **Add file → Upload files** e depois **Commit**.

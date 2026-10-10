@@ -20,5 +20,16 @@ export const RECAPTCHA_SITE_KEY = "6LcBV-UtAAAAAGw-f2_BGfIep3bAUOiHbsBEYFP5";
 export const MODELO_IA = "gemini-3.5-flash";
 
 // Chave da YouTube Data API v3 (busca automática de vídeos de execução).
-// Restrinja a chave ao domínio henriquemalone.github.io no Google Cloud. Vazio = busca desativada.
+// Restrinja a chave aos domínios hypertreino.com.br, www.hypertreino.com.br e henriquemalone.github.io no Google Cloud. Vazio = busca desativada.
 export const YOUTUBE_API_KEY = "AIzaSyDj7Ne2fUHHfr6Xiqi87sNlgUDkkuOJQ5U";
+
+// ================= Comercial (teste de vendas) =================
+// E-mail da SUA conta no app: libera a tela "Admin" para dar acesso a assinantes e vitalícios.
+// Precisa ser o mesmo e-mail colocado no firestore.rules (função isAdmin).
+export const ADMIN_EMAIL = "henrique.malone@gmail.com";
+export const LINK_ASSINATURA = "https://mpago.la/16FuQqg";
+export const PRECO_TXT = "R$ 9,90/mês";
+export const DIAS_TESTE = 7;
+// WhatsApp de suporte com DDI+DDD, só números (ex.: 5511999998888). Vazio = esconde o botão.
+export const SUPORTE_WHATSAPP = "5519982278392";
+export const SUPORTE_EMAIL = "hypertreinos@gmail.com";

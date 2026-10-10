@@ -7,11 +7,11 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Treino">
+<meta name="apple-mobile-web-app-title" content="Hyper Fit">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" href="icon-192.png">
-<title>Treino</title>
+<title>Hyper Fit</title>
 <style>
   :root{
     --bg:#0e0f11; --card:#17191c; --card2:#1f2226; --line:#2a2e33;
@@ -228,12 +228,16 @@
   .altbox{background:#7aa7ff14;border:1px solid #7aa7ff40;border-radius:12px;padding:10px 12px;margin-top:6px;font-size:14px}
   .altbox small{color:var(--bi);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:2px}
   .it.riscado .nm{text-decoration:line-through;color:var(--mut)}
+  .exlink{background:none;border:0;color:inherit;font:inherit;padding:0;cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px}
+  .passo{display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--line);font-size:14px;line-height:1.5}
+  .passo span{width:26px;height:26px;border-radius:50%;background:var(--ac);color:var(--ac-tx);display:grid;place-items:center;font-weight:800;flex-shrink:0;font-size:13px}
+  a.btn.sm{display:inline-block}
 </style>
 </head>
 <body class="noauth">
 <div class="app">
   <header>
-    <div><small id="sub"></small><h1 id="ttl">Treino</h1></div>
+    <div><small id="sub"></small><h1 id="ttl">Hyper Fit</h1></div>
     <button class="icon-btn" id="hdrBtn" aria-label="Ajustes" style="visibility:hidden" onclick="A.go('ajustes')">
       <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
     </button>

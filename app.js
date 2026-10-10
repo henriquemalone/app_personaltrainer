@@ -1,15 +1,15 @@
 // ================================================================
 //  Treino v2 — PWA + Firebase (Auth, Firestore offline, AI Logic)
 // ================================================================
-export const VERSAO_APP = '2.5.0';
+export const VERSAO_APP = '2.7.0';
 const FB = 'https://www.gstatic.com/firebasejs/12.19.0/';
 
-import { firebaseConfig, RECAPTCHA_SITE_KEY, MODELO_IA, YOUTUBE_API_KEY } from './config.js';
+import { firebaseConfig, RECAPTCHA_SITE_KEY, MODELO_IA, YOUTUBE_API_KEY, ADMIN_EMAIL, LINK_ASSINATURA, PRECO_TXT, DIAS_TESTE, SUPORTE_WHATSAPP, SUPORTE_EMAIL } from './config.js';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword,
-  sendPasswordResetEmail, signOut, updateProfile } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js';
+  sendPasswordResetEmail, signOut, updateProfile, deleteUser, reauthenticateWithCredential, EmailAuthProvider } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js';
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc,
-  deleteDoc, onSnapshot, query, orderBy, limit, writeBatch, getDoc } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
+  deleteDoc, onSnapshot, query, orderBy, limit, writeBatch, getDoc, getDocs } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
 
 // ================= Utilidades =================
 const $ = id => document.getElementById(id);
@@ -50,7 +50,7 @@ if (configurado) {
 
 // ================= Estado =================
 const cfgPadrao = () => ({ backupDias: 14, ultimoBackup: null, avisoVisto: null, migrado: false });
-const S = { user: null, perfil: { cfg: cfgPadrao() }, fichas: [], sessoes: [], avaliacoes: [], plano: null, diario: [], ativo: null, pronto: { fichas: false, sessoes: false, perfil: false, ativo: false, avaliacoes: false, plano: false, diario: false } };
+const S = { user: null, perfil: { cfg: cfgPadrao() }, fichas: [], sessoes: [], avaliacoes: [], plano: null, diario: [], acesso: null, ativo: null, pronto: { fichas: false, sessoes: false, perfil: false, ativo: false, avaliacoes: false, plano: false, diario: false, acesso: false } };
 let unsubs = [];
 const uref = (...p) => doc(db, 'users', S.user.uid, ...p);
 const ucol = (...p) => collection(db, 'users', S.user.uid, ...p);
@@ -85,6 +85,8 @@ function escutar() {
   unsubs.push(onSnapshot(query(ucol('avaliacoes'), orderBy('data', 'asc')), qs => {
     S.avaliacoes = qs.docs.map(d => d.data()); S.pronto.avaliacoes = true; aoMudar('avaliacoes');
   }, erroEscuta));
+  unsubs.push(onSnapshot(doc(db, 'acessos', S.user.uid), d => { S.acesso = d.exists() ? d.data() : null; S.pronto.acesso = true; aoMudar('acesso'); },
+    e => { console.warn('acessos', e); S.acesso = null; S.pronto.acesso = true; aoMudar('acesso'); }));
   unsubs.push(onSnapshot(uref('dieta', 'atual'), d => { S.plano = d.exists() ? d.data() : null; S.pronto.plano = true; aoMudar('plano'); }, erroEscuta));
   unsubs.push(onSnapshot(query(ucol('diario'), orderBy('data', 'desc'), limit(120)), qs => { S.diario = qs.docs.map(d => d.data()); S.pronto.diario = true; aoMudar('diario'); }, erroEscuta));
   unsubs.push(onSnapshot(uref('estado', 'ativo'), d => {
@@ -99,7 +101,7 @@ function erroEscuta(e) { console.error(e); toast('Sem acesso aos dados: ' + (e.c
 let primeiraCarga = true;
 function aoMudar(o) {
   if (!Object.values(S.pronto).every(Boolean)) return;
-  if (primeiraCarga) { primeiraCarga = false; if (S.ativo) { rota = 'treino'; pilha.push('treino'); history.pushState({ rota: 'treino', i: 1 }, ''); } render(); checarAvisoValidade(); checarMigracao(); return; }
+  if (primeiraCarga) { primeiraCarga = false; if (S.ativo) { rota = 'treino'; pilha.push('treino'); history.pushState({ rota: 'treino', i: 1 }, ''); } render(); if (posLogin()) { checarAvisoValidade(); checarMigracao(); } return; }
   if (['editar', 'prompt', 'auth', 'revisar', 'avaliacao', 'dietaTexto', 'dietaRevisar', 'dietaEditar'].includes(rota)) return;
   if (rota === 'dieta' && (o === 'diario' || o === 'plano') && document.getElementById('modal').classList.contains('show')) return; // não atrapalhar quem está digitando
   if (rota === 'treino' && S.ativo && o !== 'ativo') { $('navDot').style.display = 'block'; return; }
@@ -230,7 +232,7 @@ function checarAvisoValidade() {
 function calLinks(f) {
   if (!f.validade) return '';
   const d = f.validade.replace(/-/g, ''); const x = new Date(f.validade + 'T00:00'); x.setDate(x.getDate() + 1);
-  const g = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent('Trocar treino ' + f.letra + ' – ' + f.nome)}&dates=${d}/${ymd(x).replace(/-/g, '')}&details=${encodeURIComponent('A ficha ' + f.letra + ' chegou ao prazo de validade.')}`;
+  const g = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent('Hyper Fit: trocar treino ' + f.letra + ' – ' + f.nome)}&dates=${d}/${ymd(x).replace(/-/g, '')}&details=${encodeURIComponent('A ficha ' + f.letra + ' chegou ao prazo de validade.')}`;
   return `<div class="btns" style="margin-top:10px"><a class="btn sm ghost" href="${g}" target="_blank" rel="noopener">+ Google Agenda</a>
     <button class="btn sm ghost" onclick="A.baixarICS('${f.id}')">+ Calendário (.ics)</button></div>`;
 }
@@ -279,12 +281,13 @@ function render() {
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.v === rota || (['editar', 'prompt', 'revisar'].includes(rota) && b.dataset.v === 'fichas') || (rota === 'avaliacao' && b.dataset.v === 'medidas') || (rota.startsWith('dieta') && b.dataset.v === 'dieta')));
   $('navDot').style.display = S.ativo ? 'block' : 'none';
   $('hdrBtn').style.visibility = rota === 'ajustes' ? 'hidden' : 'visible';
-  ({ fichas: vFichas, editar: vEditar, prompt: vPrompt, revisar: vRevisar, treino: vTreino, evolucao: vEvolucao, medidas: vMedidas, avaliacao: vAvaliacao, dieta: vDieta, dietaTexto: vDietaTexto, dietaRevisar: vDietaRevisar, dietaEditar: vDietaEditar, ajustes: vAjustes })[rota]();
+  if (!statusAcesso().ok && !ROTAS_LIVRES.has(rota) && !(rota === 'treino' && S.ativo)) return vAssinar();
+  ({ assinar: vAssinar, admin: vAdmin, fichas: vFichas, editar: vEditar, prompt: vPrompt, revisar: vRevisar, treino: vTreino, evolucao: vEvolucao, medidas: vMedidas, avaliacao: vAvaliacao, dieta: vDieta, dietaTexto: vDietaTexto, dietaRevisar: vDietaRevisar, dietaEditar: vDietaEditar, ajustes: vAjustes })[rota]();
 }
 const setHdr = (sub, ttl) => { $('sub').textContent = sub; $('ttl').textContent = ttl; };
 
 function vNaoConfigurado() {
-  setHdr('Configuração pendente', 'Treino');
+  setHdr('Configuração pendente', 'Hyper Fit');
   $('view').innerHTML = `<div class="banner warn"><b>Firebase não configurado</b>Preencha o arquivo <code>config.js</code> com os dados do seu projeto Firebase (passo a passo no LEIA-ME.md) e publique de novo.</div>`;
 }
 
@@ -295,11 +298,14 @@ function vAuth() {
   $('hdrBtn').style.visibility = 'hidden';
   setHdr('', modoAuth === 'criar' ? 'Criar conta' : modoAuth === 'senha' ? 'Recuperar senha' : 'Entrar');
   $('view').innerHTML = `<div class="auth">
-    <div class="logo"><img src="icon-192.png" width="52" height="52" style="border-radius:14px" alt=""><div><b style="font-size:20px">Treino</b><div class="mut">Seus treinos, em qualquer celular</div></div></div>
+    <div class="logo"><img src="icon-192.png" width="52" height="52" style="border-radius:14px" alt=""><div><b style="font-size:20px">Hyper Fit</b><div class="mut">Treino, dieta e evolução em um só app</div></div></div>
     <form onsubmit="event.preventDefault();A.enviarAuth()">
       ${modoAuth === 'criar' ? `<label class="f">Nome</label><input class="in" id="aNome" autocomplete="name" required>` : ''}
       <label class="f">E-mail</label><input class="in" id="aEmail" type="email" autocomplete="email" required>
-      ${modoAuth !== 'senha' ? `<label class="f">Senha</label><input class="in" id="aSenha" type="password" minlength="6" autocomplete="${modoAuth === 'criar' ? 'new-password' : 'current-password'}" required>` : ''}
+      ${modoAuth === 'criar' ? '' : ''}${modoAuth !== 'senha' ? `<label class="f">Senha</label><input class="in" id="aSenha" type="password" minlength="6" autocomplete="${modoAuth === 'criar' ? 'new-password' : 'current-password'}" required>` : ''}
+      ${modoAuth === 'criar' ? `<label class="row left" style="gap:10px;font-size:13px;margin-top:14px;align-items:flex-start;color:var(--mut)"><input type="checkbox" id="aAceite" required style="width:20px;height:20px;flex-shrink:0;margin-top:1px">
+        <span>Li e aceito os <a href="termos.html" target="_blank" style="color:var(--ac)">Termos de Uso</a> e a <a href="privacidade.html" target="_blank" style="color:var(--ac)">Política de Privacidade</a>, tenho 18 anos ou mais e consinto com o tratamento dos meus dados de saúde (treino, medidas e alimentação).</span></label>
+        <div class="mut" style="font-size:12px;margin-top:8px">🎁 ${DIAS_TESTE} dias grátis, sem cartão. Depois, ${esc(PRECO_TXT)}.</div>` : ''}
       <button class="btn" id="aBtn" style="margin-top:18px">${modoAuth === 'criar' ? 'Criar conta' : modoAuth === 'senha' ? 'Enviar e-mail de recuperação' : 'Entrar'}</button>
     </form>
     <div style="margin-top:14px;text-align:center">
@@ -314,7 +320,9 @@ async function enviarAuth() {
   const email = $('aEmail').value.trim(), senha = $('aSenha')?.value, b = $('aBtn'); b.disabled = true;
   try {
     if (modoAuth === 'entrar') await signInWithEmailAndPassword(auth, email, senha);
-    else if (modoAuth === 'criar') { const c = await createUserWithEmailAndPassword(auth, email, senha); await updateProfile(c.user, { displayName: $('aNome').value.trim() }); }
+    else if (modoAuth === 'criar') { if (!$('aAceite').checked) { b.disabled = false; return toast('Aceite os termos para criar a conta'); }
+      const c = await createUserWithEmailAndPassword(auth, email, senha); await updateProfile(c.user, { displayName: $('aNome').value.trim() });
+      await setDoc(doc(db, 'users', c.user.uid), { aceite: { versao: VERSAO_TERMOS, em: Date.now() }, email, nome: $('aNome').value.trim(), criadoEm: Date.now() }, { merge: true }).catch(() => {}); }
     else { await sendPasswordResetEmail(auth, email); toast('E-mail enviado. Confira sua caixa de entrada e o spam.', 5000); modoAuth = 'entrar'; vAuth(); }
   } catch (e) { toast(msgAuth(e.code || e.message), 4000); b.disabled = false; }
 }
@@ -338,12 +346,12 @@ function bannersGerais() {
   const bd = S.perfil.cfg.backupDias;
   if (bd > 0 && S.sessoes.length >= 5) { const ult = S.perfil.cfg.ultimoBackup; const d = ult ? Math.floor((Date.now() - ult) / 864e5) : null;
     if (d === null || d >= bd) h += `<div class="banner info"><b>💾 Backup extra</b>Seus dados já estão na nuvem; um arquivo de backup é uma garantia a mais. <button class="btn sm" style="margin-top:10px;display:block" onclick="A.exportar()">Exportar agora</button></div>`; }
-  if (!standalone()) h += `<div class="banner info"><b>📲 Instale na tela inicial</b>${isIOS ? 'No Safari: Compartilhar → "Adicionar à Tela de Início".' : 'No Chrome: menu ⋮ → "Instalar app".'}</div>`;
+  if (!standalone()) h += `<div class="banner info"><div class="row"><div><b>📲 Instale o app</b>Ícone na tela inicial e tela cheia.</div><button class="btn sm" onclick="A.guiaInstalacao()">Como instalar</button></div></div>`;
   return h;
 }
 function vFichas() {
   setHdr(`Olá${S.user.displayName ? ', ' + S.user.displayName.split(' ')[0] : ''} · ${new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'short' })}`, 'Minhas fichas');
-  let h = bannersGerais();
+  let h = bannerAcesso() + bannersGerais(); const liberado = statusAcesso().ok;
   if (S.ativo) h += `<div class="banner info"><b>Treino ${esc(S.ativo.letra)} em andamento</b><button class="btn sm" style="margin-top:8px" onclick="A.go('treino')">Continuar</button></div>`;
   if (!S.fichas.length) h += `<div class="empty"><b>Nenhuma ficha ainda</b>Cole seu treino em texto e o app monta tudo, ou crie manualmente.</div>`;
   h += S.fichas.map(f => {
@@ -353,8 +361,8 @@ function vFichas() {
         <div style="min-width:0"><b>${esc(f.nome)}</b><div class="mut">${f.itens.length} exercício${f.itens.length === 1 ? '' : 's'}${ult ? ' · último ' + fmtDH(ult.inicio) : ''}</div></div></div>
         <button class="icon-btn" aria-label="Editar" onclick="A.editar('${f.id}')"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button></div>
       <div class="btns" style="margin-top:10px">${st ? `<span class="chip ${st.cls}">${st.txt}</span>` : ''}${nbi ? `<span class="chip bi">${nbi} bi-set${nbi > 1 ? 's' : ''}</span>` : ''}</div>
-      <div class="mut" style="margin:12px 0">${f.itens.map((e, i) => (e.bi ? ' + ' : (i ? ' · ' : '')) + esc(e.nome)).join('') || 'Sem exercícios'}</div>
-      <button class="btn" ${f.itens.length ? '' : 'disabled'} onclick="A.iniciar('${f.id}')">Iniciar treino ${esc(f.letra)}</button>
+      <div class="mut exlist" style="margin:12px 0">${f.itens.map((e, i) => (e.bi ? ' + ' : (i ? ' · ' : '')) + `<button class="exlink" onclick="A.verExercicio('${f.id}','${e.id}')">${esc(e.nome)}</button>`).join('') || 'Sem exercícios'}</div>
+      ${liberado ? `<button class="btn" ${f.itens.length ? '' : 'disabled'} onclick="A.iniciar('${f.id}')">Iniciar treino ${esc(f.letra)}</button>` : `<button class="btn ghost" onclick="A.go('assinar')">🔒 Assinar para treinar</button>`}
     </div>`; }).join('');
   h += `<div class="btns"><button class="btn" style="flex:1" onclick="A.go('prompt')">✨ Cadastrar por texto</button><button class="btn ghost" style="flex:1" onclick="A.editar(null)">+ Ficha manual</button></div>`;
   $('view').innerHTML = h;
@@ -550,6 +558,7 @@ function setsIniciais(meta, pe) {
   return meta.map((m, j) => ({ kg: pe?.sets[j]?.kg ?? (m.kg !== '' && m.kg != null ? m.kg : (pe?.sets.at(-1)?.kg ?? '')), reps: pe?.sets[j]?.reps ?? repsBase(m.reps), done: false }));
 }
 function iniciar(id) {
+  if (!statusAcesso().ok) return go('assinar');
   if (S.ativo && !confirm('Já existe um treino em andamento. Descartar e começar outro?')) return go('treino');
   const f = S.fichas.find(x => x.id === id); const ult = S.sessoes.find(s => s.fichaId === id);
   S.ativo = { fichaId: f.id, letra: f.letra, nome: f.nome, inicio: Date.now(), passo: 0, pulados: [],
@@ -819,6 +828,16 @@ function prefetchPasso(g) {
     if (v[0] && e2 && e2.nome === e.nome && !e2.videoId) { e2.videoId = v[0].id; salvarAtivo(); if (rota === 'treino') keepScroll(vTreino); } });
 }
 let exAberto = null, abaEx = 0;
+// alvo da tela: item do treino em andamento (i) ou item de uma ficha (obj)
+const exAlvo = () => exAberto ? (exAberto.obj || S.ativo?.itens[exAberto.i]) : null;
+function verExercicio(fid, iid) {
+  const f = S.fichas.find(x => x.id === fid), it = f?.itens.find(x => x.id === iid); if (!it) return;
+  const obj = { nome: it.nome, videoId: it.videoId || '', subs: it.subs || [], fichaId: fid };
+  exAberto = { obj, nome: it.nome }; abaEx = 0;
+  if (!$('exTela').classList.contains('show')) empilharCamada(); $('exTela').classList.add('show'); renderExercicio();
+  if (!obj.videoId) garantirVideos(obj.nome).then(v => { if (v[0] && exAberto?.obj === obj && !obj.videoId) { obj.videoId = v[0].id; renderExercicio(); } });
+  detalhesExercicio(obj.nome).then(() => { if (exAberto?.obj === obj) renderExercicio(true); }).catch(() => {});
+}
 function abrirExercicio(i) {
   const e = S.ativo.itens[i]; exAberto = { i, nome: e.nome }; abaEx = 0;
   if (!$('exTela').classList.contains('show')) empilharCamada(); $('exTela').classList.add('show'); renderExercicio();
@@ -827,7 +846,7 @@ function abrirExercicio(i) {
 }
 function fecharExercicio(viaVoltar) { $('exTela').classList.remove('show'); $('exVideo').innerHTML = ''; exAberto = null; if (rota === 'treino') keepScroll(vTreino); }
 function renderExercicio(soCorpo) {
-  if (!exAberto || !S.ativo) return; const e = S.ativo.itens[exAberto.i]; const c = catCache[slug(e.nome)] || {};
+  const e = exAlvo(); if (!e) return; const c = catCache[slug(e.nome)] || {};
   $('exNome').textContent = e.nome;
   if (!soCorpo) $('exVideo').innerHTML = e.videoId
     ? `<iframe src="https://www.youtube-nocookie.com/embed/${esc(e.videoId)}?playsinline=1&rel=0" title="Vídeo de execução" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`
@@ -859,7 +878,7 @@ function renderExercicio(soCorpo) {
 }
 const abaExercicio = k => { abaEx = k; renderExercicio(true); };
 async function trocarVideo() {
-  if (!exAberto) return; const e = S.ativo.itens[exAberto.i]; const vids = await garantirVideos(e.nome);
+  const e = exAlvo(); if (!e) return; const vids = await garantirVideos(e.nome);
   openModal(`<h2>Trocar vídeo</h2><div class="mut" style="margin-bottom:6px">Opções encontradas no YouTube:</div>
     ${vids.length ? vids.map(v => `<div class="vopt ${v.id === e.videoId ? 'on' : ''}" onclick="A.escolherVideo('${esc(v.id)}')"><img src="https://i.ytimg.com/vi/${esc(v.id)}/default.jpg" alt=""><div><div style="font-size:14px">${esc(v.t)}</div><div class="mut" style="font-size:12px">${v.id === e.videoId ? 'Em uso' : 'Toque para usar'}</div></div></div>`).join('')
       : `<div class="mut">${YOUTUBE_API_KEY ? 'Nenhum vídeo encontrado (ou sem internet).' : 'Busca automática desativada: falta a chave do YouTube no config.js.'}</div>`}
@@ -870,8 +889,8 @@ async function trocarVideo() {
 function idDoLink(u) { const m = String(u).match(/(?:youtu\.be\/|v=|shorts\/|embed\/|live\/)([A-Za-z0-9_-]{11})/); return m ? m[1] : (/^[A-Za-z0-9_-]{11}$/.test(u.trim()) ? u.trim() : null); }
 function escolherVideo(id) {
   if (!id) { id = idDoLink($('vLink').value); if (!id) return toast('Link do YouTube inválido'); }
-  const e = S.ativo.itens[exAberto.i]; e.videoId = id; salvarAtivo();
-  const f = S.fichas.find(x => x.id === S.ativo.fichaId); f?.itens.forEach(x => { if (x.nome.toLowerCase() === e.nome.toLowerCase()) x.videoId = id; }); if (f) salvarFicha_(f);
+  const e = exAlvo(); e.videoId = id; if (!exAberto.obj) salvarAtivo();
+  const f = S.fichas.find(x => x.id === (exAberto.obj ? exAberto.obj.fichaId : S.ativo.fichaId)); f?.itens.forEach(x => { if (x.nome.toLowerCase() === e.nome.toLowerCase()) x.videoId = id; }); if (f) salvarFicha_(f);
   closeModal(); renderExercicio(); toast('Vídeo salvo para este exercício');
 }
 
@@ -938,6 +957,12 @@ function vAjustes() {
       <div><label>Altura (cm)</label><input class="in" id="pAlt" inputmode="numeric" value="${esc(corpo().altura || '')}"></div></div>
     <div class="mut" style="margin:8px 0 10px;font-size:12px">Usado no IMC, na relação cintura/altura e no % de gordura por dobras.</div>
     <button class="btn ghost" onclick="A.salvarCorpo()">Salvar perfil</button></div>
+  <div class="card"><div class="row"><div><b>Assinatura</b><div class="mut" style="margin-top:4px">${esc(statusAcesso().txt)}</div></div><button class="btn sm" onclick="A.go('assinar')">${statusAcesso().tipo === 'vitalicio' || statusAcesso().tipo === 'admin' ? 'Ver' : 'Assinar'}</button></div>
+    ${ehAdmin() ? `<button class="btn" style="margin-top:12px" onclick="A.go('admin')">⚙ Admin: liberar acessos</button>` : ''}</div>
+  <div class="card"><b>Ajuda</b><div class="btns" style="margin-top:10px">
+    ${linkWhats("Olá! Preciso de ajuda com o Hyper Fit. Meu e-mail: " + S.user.email) ? `<a class="btn sm" href="${esc(linkWhats("Olá! Preciso de ajuda com o Hyper Fit. Meu e-mail: " + S.user.email))}" target="_blank" rel="noopener">💬 Falar com o suporte</a>` : ''}
+    <button class="btn sm ghost" onclick="A.guiaInstalacao()">📲 Como instalar</button>
+    <a class="btn sm ghost" href="termos.html" target="_blank">Termos de uso</a><a class="btn sm ghost" href="privacidade.html" target="_blank">Privacidade</a></div></div>
   <div class="card"><b>Nuvem</b><div class="mut" style="margin-top:6px;line-height:1.7">
     Seus dados ficam salvos na sua conta e aparecem em qualquer celular em que você entrar.<br>
     Conexão: ${navigator.onLine ? 'online ✅' : 'offline (sincroniza quando voltar) ⚠️'}<br>
@@ -954,7 +979,8 @@ function vAjustes() {
     ${'Notification' in window && Notification.permission === 'default' && !isIOS ? `<button class="btn ghost" style="margin-top:10px" onclick="Notification.requestPermission().then(()=>A.go('ajustes'))">Ativar notificação do timer</button>` : ''}
     <button class="btn ghost" style="margin-top:10px" onclick="A.verificarAtualizacao()">Verificar atualização</button></div>
   <div class="card"><b>Zona de perigo</b><div class="mut" style="margin:6px 0 12px">Apaga fichas e histórico da sua conta (em todos os aparelhos). Exporte um backup antes.</div>
-    <button class="btn bad" onclick="A.apagarTudo()">Apagar todos os meus dados</button></div>
+    <button class="btn bad" onclick="A.apagarTudo()">Apagar todos os meus dados</button>
+    <button class="btn bad" style="margin-top:8px" onclick="A.excluirConta()">Excluir minha conta</button></div>
   <button class="btn ghost" onclick="A.go('fichas')">Voltar</button>`;
 }
 const setBackupDias = v => { S.perfil.cfg.backupDias = parseInt(v); salvarCfg(); };
@@ -1470,6 +1496,151 @@ function salvarPlanoManual() {
 }
 function excluirPlano() { if (!confirm('Excluir o plano alimentar? O histórico de dias é mantido.')) return; S.plano = null; deleteDoc(uref('dieta', 'atual')).catch(falhou); rascPlano = null; go('dieta'); }
 
+
+// ================= Comercial: teste grátis, assinatura, vitalício, admin =================
+// acessos/{uid} = {tipo:'assinante'|'vitalicio', ate:'YYYY-MM-DD'|null, email, em} — só o admin grava (regras do Firestore)
+const VERSAO_TERMOS = '2026-10';
+const ehAdmin = () => !!ADMIN_EMAIL && S.user?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+function inicioConta() { const t = Date.parse(S.user?.metadata?.creationTime || ''); return isFinite(t) ? t : (S.perfil.criadoEm || Date.now()); }
+function statusAcesso() {
+  if (ehAdmin()) return { ok: true, tipo: 'admin', txt: 'Administrador' };
+  const a = S.acesso;
+  if (a?.tipo === 'vitalicio') return { ok: true, tipo: 'vitalicio', txt: 'Acesso vitalício' };
+  if (a?.tipo === 'assinante' && a.ate && a.ate >= hoje()) { const d = diasAte(a.ate); return { ok: true, tipo: 'assinante', dias: d, txt: `Assinante até ${dtC(a.ate)}` }; }
+  const fim = inicioConta() + DIAS_TESTE * 864e5, rest = Math.ceil((fim - Date.now()) / 864e5);
+  if (rest > 0) return { ok: true, tipo: 'teste', dias: rest, txt: `Teste grátis: ${rest} dia${rest > 1 ? 's' : ''} restante${rest > 1 ? 's' : ''}` };
+  return { ok: false, tipo: a?.tipo === 'assinante' ? 'expirada' : 'fim-teste', txt: a?.tipo === 'assinante' ? 'Assinatura vencida' : 'Teste grátis encerrado' };
+}
+const ROTAS_LIVRES = new Set(['fichas', 'ajustes', 'assinar', 'admin']);
+function bannerAcesso() {
+  const s = statusAcesso();
+  if (s.tipo === 'teste') return `<div class="banner info"><div class="row"><div><b>🎁 ${s.txt}</b>Aproveite tudo do app. Depois, ${esc(PRECO_TXT)}.</div><button class="btn sm" onclick="A.go('assinar')">Assinar</button></div></div>`;
+  if (s.tipo === 'assinante' && s.dias <= 3) return `<div class="banner warn"><div class="row"><div><b>Sua assinatura vence em ${s.dias} dia${s.dias === 1 ? '' : 's'}</b>Renove para não perder o acesso.</div><button class="btn sm" onclick="A.go('assinar')">Renovar</button></div></div>`;
+  if (!s.ok) return `<div class="banner bad"><b>🔒 ${s.txt}</b>Seus dados continuam salvos. Assine para voltar a treinar, registrar medidas e dieta. Os vídeos dos exercícios continuam liberados.<button class="btn sm" style="margin-top:10px;display:block" onclick="A.go('assinar')">Assinar ${esc(PRECO_TXT)}</button></div>`;
+  return '';
+}
+const linkWhats = msg => SUPORTE_WHATSAPP ? `https://wa.me/${SUPORTE_WHATSAPP}?text=${encodeURIComponent(msg)}` : (SUPORTE_EMAIL ? `mailto:${SUPORTE_EMAIL}?subject=${encodeURIComponent('Suporte Hyper Fit')}&body=${encodeURIComponent(msg)}` : '');
+function vAssinar() {
+  const s = statusAcesso(); setHdr(s.txt, 'Assinatura');
+  const aviso = linkWhats(`Olá! Fiz a assinatura do Hyper Fit. Meu e-mail de cadastro é ${S.user.email}`);
+  $('view').innerHTML = `<div class="card" style="text-align:center;padding:22px 16px">
+      <div style="font-size:40px">💪</div><b style="font-size:20px;display:block;margin:6px 0">Hyper Fit</b><div class="mut" style="margin-bottom:4px">Treino, dieta e evolução em um só app</div>
+      <div style="font-size:30px;font-weight:800;color:var(--ac);margin:10px 0 2px">${esc(PRECO_TXT)}</div><div class="mut">preço de lançamento · cancele quando quiser</div></div>
+    <div class="card"><div style="line-height:1.9;font-size:14px">✅ Cole o treino ou a dieta do seu profissional e a IA monta tudo<br>✅ Treino guiado com timer de descanso, bi-sets e vídeos<br>✅ Plano alimentar com metas, água e trocas<br>✅ Medidas corporais e gráficos de evolução<br>✅ Seus dados na nuvem, em qualquer celular</div></div>
+    ${s.tipo === 'assinante' || s.tipo === 'vitalicio' || s.tipo === 'admin' ? `<div class="banner info"><b>✅ ${s.txt}</b>Obrigado por apoiar o app!</div>` : ''}
+    <a class="btn" href="${esc(LINK_ASSINATURA)}" target="_blank" rel="noopener">Assinar com Mercado Pago</a>
+    <div class="card" style="margin-top:12px"><b>Como funciona</b><div class="mut" style="margin-top:6px;line-height:1.7">
+      1. Assine pelo botão acima (cartão, com cobrança mensal automática).<br>
+      2. Use no pagamento, de preferência, o mesmo e-mail da conta: <b style="color:var(--tx)">${esc(S.user.email)}</b><br>
+      3. O acesso é liberado em até 24 horas${aviso ? ' — se quiser agilizar, avise pelo botão abaixo' : ''}. Esta tela atualiza sozinha.</div>
+      ${aviso ? `<a class="btn ghost" style="margin-top:12px" href="${esc(aviso)}" target="_blank" rel="noopener">Já assinei — avisar</a>` : ''}</div>
+    <button class="btn ghost" onclick="A.go('fichas')">Voltar</button>`;
+}
+// ---------- Admin: liberar acessos ----------
+let adminLista = null;
+async function carregarAdmin() {
+  try {
+    const [us, ac] = await Promise.all([getDocs(query(collection(db, 'users'), orderBy('ultimoAcesso', 'desc'), limit(100))), getDocs(collection(db, 'acessos'))]);
+    const acs = {}; ac.docs.forEach(d => acs[d.id] = d.data());
+    adminLista = us.docs.map(d => ({ uid: d.id, ...d.data(), acesso: acs[d.id] || null }));
+  } catch (e) { adminLista = []; toast('Sem permissão de admin: confira ADMIN_EMAIL e as regras do Firestore', 6000); }
+  if (rota === 'admin') vAdmin();
+}
+function statusDe(u) {
+  const a = u.acesso;
+  if (a?.tipo === 'vitalicio') return ['Vitalício', 'var(--ok)'];
+  if (a?.tipo === 'assinante') return a.ate >= hoje() ? [`Assinante até ${dtC(a.ate)}`, 'var(--ok)'] : [`Venceu ${dtC(a.ate)}`, 'var(--bad)'];
+  const ini = u.criadoEm || 0, rest = Math.ceil((ini + DIAS_TESTE * 864e5 - Date.now()) / 864e5);
+  return rest > 0 ? [`Teste: ${rest}d`, 'var(--warn)'] : ['Teste encerrado', 'var(--mut)'];
+}
+function vAdmin() {
+  if (!ehAdmin()) return go('fichas');
+  setHdr('Liberar assinantes e vitalícios', 'Admin');
+  if (!adminLista) { $('view').innerHTML = `<div class="empty"><span class="spin"></span>Carregando usuários…</div>`; carregarAdmin(); return; }
+  const n = t => adminLista.filter(u => statusDe(u)[0].startsWith(t)).length;
+  $('view').innerHTML = `<div class="kpis3"><div class="kpi"><b>${adminLista.length}</b><span class="mut">usuários</span></div><div class="kpi"><b>${n('Assinante') + n('Vitalício')}</b><span class="mut">com acesso pago/vitalício</span></div><div class="kpi"><b>${n('Teste:')}</b><span class="mut">em teste</span></div></div>
+    <div class="card"><b>Liberar acesso</b>
+      <label class="f">E-mail do usuário (o da conta no app)</label><input class="in" id="admEmail" type="email" placeholder="cliente@email.com">
+      <label class="f">Tipo</label><select class="in" id="admTipo" style="max-width:100%"><option value="1">Assinante · 1 mês</option><option value="3">Assinante · 3 meses</option><option value="12">Assinante · 12 meses</option><option value="v">Vitalício</option><option value="x">Remover acesso</option></select>
+      <button class="btn" style="margin-top:12px" onclick="A.admLiberar()">Salvar</button>
+      <div class="mut" style="font-size:12px;margin-top:8px">Renovação: escolha 1 mês de novo — o prazo soma a partir da data atual de vencimento.</div></div>
+    <div class="card"><div class="row"><b>Usuários recentes</b><button class="link ac" onclick="A.admRecarregar()">Atualizar</button></div>
+      ${adminLista.map(u => { const [t, c] = statusDe(u); return `<div class="sess" onclick="A.admUsar('${esc(u.email || '')}')"><div class="row"><div style="min-width:0"><div style="overflow:hidden;text-overflow:ellipsis">${esc(u.nome || '—')} · <span class="mut">${esc(u.email || 'sem e-mail')}</span></div>
+        <div class="mut" style="font-size:12px">último acesso ${u.ultimoAcesso ? fmtDH(u.ultimoAcesso) : '—'}</div></div><span style="color:${c};font-size:12px;font-weight:600;white-space:nowrap">${t}</span></div></div>`; }).join('') || '<div class="mut" style="margin-top:8px">Nenhum usuário ainda.</div>'}</div>
+    <button class="btn ghost" onclick="A.go('ajustes')">Voltar</button>`;
+}
+function admUsar(email) { const el = $('admEmail'); if (el) { el.value = email; el.scrollIntoView({ behavior: 'smooth', block: 'center' }); } }
+async function admLiberar() {
+  const email = $('admEmail').value.trim().toLowerCase(), tipo = $('admTipo').value; if (!email) return toast('Informe o e-mail');
+  const u = adminLista?.find(x => (x.email || '').toLowerCase() === email);
+  if (!u) return toast('E-mail não encontrado. A pessoa precisa ter criado a conta e aberto o app pelo menos uma vez.', 5000);
+  try {
+    if (tipo === 'x') { await deleteDoc(doc(db, 'acessos', u.uid)); }
+    else if (tipo === 'v') { await setDoc(doc(db, 'acessos', u.uid), { tipo: 'vitalicio', ate: null, email, em: Date.now() }); }
+    else { const base = u.acesso?.tipo === 'assinante' && u.acesso.ate >= hoje() ? new Date(u.acesso.ate + 'T00:00') : new Date();
+      base.setMonth(base.getMonth() + parseInt(tipo)); await setDoc(doc(db, 'acessos', u.uid), { tipo: 'assinante', ate: ymd(base), email, em: Date.now() }); }
+    toast('Acesso atualizado'); adminLista = null; vAdmin();
+  } catch (e) { toast('Erro: ' + (e.code || e.message), 5000); }
+}
+// ---------- Termos (aceite) ----------
+function checarAceite() {
+  if (S.perfil.aceite?.versao === VERSAO_TERMOS) return true;
+  openModal(`<h2>Termos de uso e privacidade</h2>
+    <div class="mut" style="line-height:1.6;margin-bottom:12px">Para continuar, leia e aceite os <a href="termos.html" target="_blank" style="color:var(--ac)">Termos de Uso</a> e a <a href="privacidade.html" target="_blank" style="color:var(--ac)">Política de Privacidade</a>. O app guarda dados de treino, medidas corporais e alimentação, que são dados de saúde.</div>
+    <label class="row left" style="gap:10px;font-size:14px;align-items:flex-start"><input type="checkbox" id="acCk" style="width:22px;height:22px;flex-shrink:0;margin-top:2px">Li e aceito os Termos e a Política de Privacidade, tenho 18 anos ou mais e consinto com o tratamento dos meus dados de saúde para as funções do app.</label>
+    <button class="btn" style="margin-top:14px" onclick="A.aceitarTermos()">Continuar</button>
+    <button class="btn ghost" style="margin-top:8px" onclick="A.sair()">Sair</button>`);
+  return false;
+}
+function aceitarTermos() {
+  if (!$('acCk').checked) return toast('Marque a caixa para continuar');
+  S.perfil.aceite = { versao: VERSAO_TERMOS, em: Date.now() };
+  setDoc(uref(), { aceite: S.perfil.aceite }, { merge: true }).catch(falhou); closeModal(); if (posLogin()) { checarAvisoValidade(); checarMigracao(); }
+}
+// ---------- Instalação guiada ----------
+let promptInstalar = null;
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); promptInstalar = e; });
+function guiaInstalacao(auto) {
+  if (standalone()) { if (!auto) toast('O app já está instalado neste aparelho 👍'); return; }
+  const ios = isIOS, compart = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-3px"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 12v8h14v-8"/></svg>`;
+  openModal(`<h2>📲 Instale o app no celular</h2><div class="mut" style="margin-bottom:12px">Leva 10 segundos. Ele fica com ícone na tela inicial, abre em tela cheia e funciona até sem internet.</div>
+    ${!ios && promptInstalar ? `<button class="btn" onclick="A.instalarAgora()">Instalar agora</button><div class="mut" style="text-align:center;margin:10px 0">ou faça manualmente:</div>` : ''}
+    <div class="passo"><span>1</span><div>${ios ? 'Abra este endereço no <b>Safari</b> (no Chrome do iPhone não funciona).' : 'Abra este endereço no <b>Chrome</b>.'}</div></div>
+    <div class="passo"><span>2</span><div>${ios ? `Toque no botão <b>Compartilhar</b> ${compart} na barra de baixo.` : 'Toque no menu <b>⋮</b> no canto superior direito.'}</div></div>
+    <div class="passo"><span>3</span><div>${ios ? 'Role e toque em <b>"Adicionar à Tela de Início"</b> e depois em <b>Adicionar</b>.' : 'Toque em <b>"Instalar app"</b> ou <b>"Adicionar à tela inicial"</b>.'}</div></div>
+    <div class="passo"><span>4</span><div>Feche esta aba e abra o app pelo <b>novo ícone</b> na tela inicial.</div></div>
+    <button class="btn ghost" style="margin-top:14px" onclick="A.closeModal()">${auto ? 'Depois' : 'Fechar'}</button>`);
+  if (auto) { S.perfil.cfg.guiaInstalacao = true; salvarCfg(); }
+}
+async function instalarAgora() { if (!promptInstalar) return; promptInstalar.prompt(); try { await promptInstalar.userChoice; } catch (e) {} promptInstalar = null; closeModal(); }
+// ---------- Excluir conta ----------
+function excluirConta() {
+  openModal(`<h2>Excluir minha conta</h2><div class="mut" style="line-height:1.6;margin-bottom:12px">Apaga <b style="color:var(--tx)">definitivamente</b> sua conta e todos os seus dados: fichas, treinos, medidas, dieta e perfil. Não dá para desfazer. Se você tem assinatura, cancele também no Mercado Pago.</div>
+    <label class="f">Digite sua senha para confirmar</label><input class="in" type="password" id="delSenha" autocomplete="current-password">
+    <button class="btn bad" style="margin-top:14px" id="delBtn" onclick="A.confirmarExclusao()">Excluir tudo</button>
+    <button class="btn ghost" style="margin-top:8px" onclick="A.closeModal()">Cancelar</button>`);
+}
+async function confirmarExclusao() {
+  const senha = $('delSenha').value; if (!senha) return toast('Digite sua senha');
+  const b = $('delBtn'); b.disabled = true; b.innerHTML = '<span class="spin"></span>Excluindo…';
+  try {
+    await reauthenticateWithCredential(auth.currentUser, EmailAuthProvider.credential(auth.currentUser.email, senha));
+    unsubs.forEach(u => u()); unsubs = [];
+    await gravarEmLotes([...S.fichas.map(f => [uref('fichas', f.id), null]), ...S.sessoes.map(s => [uref('sessoes', s.id), null]), ...S.avaliacoes.map(a => [uref('avaliacoes', a.id), null]),
+      ...S.diario.map(x => [uref('diario', x.data), null]), [uref('dieta', 'atual'), null], [uref('estado', 'ativo'), null], [uref(), null]]);
+    await deleteUser(auth.currentUser); closeModal(); toast('Conta excluída', 4000);
+  } catch (e) { toast(e.code === 'auth/invalid-credential' || e.code === 'auth/wrong-password' ? 'Senha incorreta' : 'Erro: ' + (e.code || e.message), 5000); b.disabled = false; b.textContent = 'Excluir tudo'; }
+}
+// ---------- Pós-login: aceite, registro de acesso, guia ----------
+let acessoRegistrado = false;
+function posLogin() {
+  if (!checarAceite()) return false;
+  if (!acessoRegistrado) { acessoRegistrado = true;
+    setDoc(uref(), { email: S.user.email, nome: S.user.displayName || '', ultimoAcesso: Date.now(), ...(S.perfil.criadoEm ? {} : { criadoEm: inicioConta() }) }, { merge: true }).catch(() => {}); }
+  if (!standalone() && !S.perfil.cfg.guiaInstalacao) setTimeout(() => { if (!$('modal').classList.contains('show')) guiaInstalacao(true); }, 900);
+  return true;
+}
+
 // ================= Modal =================
 function openModal(h) { $('sheet').innerHTML = h; if (!$('modal').classList.contains('show')) empilharCamada(); $('modal').classList.add('show'); }
 function closeModal() { $('modal').classList.remove('show'); }
@@ -1509,6 +1680,7 @@ window.A = { go, editar, df, d, ds, toggleBi, moverEx, removerEx, addEx, addSeri
   abaMed: k => { abaMed = k; vMedidas(); }, medSel: k => { medSel = k; keepScroll(vMedidas); }, cmp: (q, v) => { if (q === 'a') cmpA = +v; else cmpB = +v; keepScroll(vMedidas); },
   abaDieta: k => { abaDieta = k; refAberta = null; vDieta(); }, mudaDia, agua: aguaClick, abreRef, marcaRef, subsAlimento, trocaAlimento, comiOutra, estimar, registrarExtra, removeExtra, voltarPlano,
   setTextoDieta: v => { textoDieta = v; }, gerarDieta, setDietaImp: (k, v) => { dietaImport[k] = v; }, salvarDietaImport, editarPlano, dp, dm, dr, di, dqn, dun, addItem, remItem, addRef, remRef, metasDosItens, salvarPlanoManual, excluirPlano,
+  verExercicio, admLiberar, admUsar, admRecarregar: () => { adminLista = null; vAdmin(); }, aceitarTermos, guiaInstalacao: () => guiaInstalacao(false), instalarAgora, excluirConta, confirmarExclusao,
   modo: m => { modoAuth = m; vAuth(); } };
 
 if (!configurado) render();
@@ -1516,7 +1688,7 @@ else onAuthStateChanged(auth, u => {
   S.user = u;
   if (!u) { unsubs.forEach(x => x()); unsubs = []; S.fichas = []; S.sessoes = []; S.avaliacoes = []; S.plano = null; S.diario = []; S.ativo = null; document.body.classList.remove('emtreino'); $('tBar').style.display = 'none'; pararTimerUI(); modoAuth = 'entrar'; render(); return; }
   document.body.classList.remove('noauth'); rota = 'fichas'; primeiraCarga = true; pilha = ['fichas']; history.replaceState({ rota: 'fichas', i: 0 }, '');
-  S.pronto = { fichas: false, sessoes: false, perfil: false, ativo: false, avaliacoes: false, plano: false, diario: false };
-  setHdr('', 'Treino'); $('view').innerHTML = '<div class="empty"><span class="spin"></span>Carregando seus treinos…</div>';
+  S.pronto = { fichas: false, sessoes: false, perfil: false, ativo: false, avaliacoes: false, plano: false, diario: false, acesso: false }; S.acesso = null; acessoRegistrado = false; adminLista = null;
+  setHdr('', 'Hyper Fit'); $('view').innerHTML = '<div class="empty"><span class="spin"></span>Carregando seus treinos…</div>';
   escutar();
 });

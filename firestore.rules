@@ -9,9 +9,17 @@ service cloud.firestore {
         && request.resource.data.nome is string && request.resource.data.nome.size() <= 200
         && (!('videos' in request.resource.data) || request.resource.data.videos.size() <= 10);
     }
-    // Cada usuário só lê e grava os próprios dados
+    // Administrador do app (troque pelo e-mail da sua conta no app — o mesmo do ADMIN_EMAIL no config.js)
+    function isAdmin() { return request.auth != null && request.auth.token.email == 'henrique.malone@gmail.com'; }
+    // Acessos pagos/vitalícios: o usuário só lê o próprio; só o admin grava
+    match /acessos/{uid} {
+      allow read: if (request.auth != null && request.auth.uid == uid) || isAdmin();
+      allow write: if isAdmin();
+    }
+    // Cada usuário só lê e grava os próprios dados (o admin pode ler a lista de usuários)
     match /users/{uid} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
+      allow read: if isAdmin();
       match /{document=**} {
         allow read, write: if request.auth != null && request.auth.uid == uid;
       }
