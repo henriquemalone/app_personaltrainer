@@ -45,6 +45,9 @@ Sem a chave, o app funciona normalmente; o botão do vídeo vira "Buscar no YouT
 Firestore → **Regras** → substitua pelo conteúdo atual do `firestore.rules` → **Publicar**.
 (A v2.2 adicionou o catálogo compartilhado de exercícios: vídeos, dicas e músculos. Nenhum dado pessoal fica nele.)
 
+## Dieta (v2.3)
+Não precisa configurar nada novo: usa o mesmo Firebase e o mesmo Gemini. As regras do Firestore atuais já cobrem os dados da dieta.
+
 ## 5. Publicar
 Envie **todos os arquivos desta pasta** para o mesmo repositório da v1 (`app_personaltrainer`), substituindo os arquivos antigos: na aba Code, use **Add file → Upload files** e depois **Commit**.
 Mantenha o mesmo repositório e o mesmo endereço. Assim, ao abrir pelo ícone já instalado, o app encontra os dados da v1 e oferece enviá-los para a sua conta.

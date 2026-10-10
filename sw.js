@@ -1,7 +1,7 @@
 // Service worker do Treino v2
 // Estratégia: arquivos do app = rede primeiro (sempre a versão mais nova quando online),
 // com cópia em cache para funcionar offline. Bibliotecas do Firebase = cache primeiro (URLs versionadas).
-const CACHE = 'treino-v2.2';
+const CACHE = 'treino-v2.3';
 const FB = 'https://www.gstatic.com/firebasejs/12.19.0/';
 const APP = ['./', './index.html', './app.js', './config.js', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon-512-maskable.png', './apple-touch-icon.png'];
 const LIBS = ['firebase-app.js', 'firebase-auth.js', 'firebase-firestore.js', 'firebase-ai.js', 'firebase-app-check.js'].map(f => FB + f);

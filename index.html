@@ -48,7 +48,7 @@
   .banner.info{background:var(--card);border:1px solid var(--line)}
   .banner b{display:block;margin-bottom:2px}
   nav{position:absolute;bottom:0;left:0;right:0;display:flex;background:#121315f2;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-top:1px solid var(--line);padding:8px 0 calc(10px + var(--sb))}
-  nav button{flex:1;background:none;border:0;color:var(--mut);font-size:11px;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;position:relative}
+  nav button{flex:1;background:none;border:0;color:var(--mut);font-size:10.5px;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;position:relative}
   nav button.on{color:var(--ac)}
   nav svg{width:24px;height:24px}
   .dot{position:absolute;top:0;right:calc(50% - 18px);width:8px;height:8px;border-radius:50%;background:var(--ac)}
@@ -186,6 +186,39 @@
   ol.dicas{padding-left:20px;line-height:1.55;font-size:14px;margin-top:8px} ol.dicas li{margin-bottom:6px}
   .vopt{display:flex;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line);cursor:pointer}
   .vopt img{width:96px;height:54px;object-fit:cover;border-radius:8px;flex-shrink:0} .vopt.on img{outline:2px solid var(--ac)}
+  /* ---- dieta ---- */
+  .datenav{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+  .datenav button{background:var(--card2);border:1px solid var(--line);color:var(--tx);border-radius:10px;width:36px;height:36px;font-size:16px;cursor:pointer}
+  .datenav b{font-size:15px}
+  .kcal{display:flex;gap:14px;align-items:center}
+  .ring{width:96px;height:96px;flex-shrink:0;position:relative}
+  .ring>div{position:absolute;inset:0;display:grid;place-items:center;text-align:center;line-height:1.1}
+  .ring b{font-size:20px} .ring small{font-size:11px;color:var(--mut)}
+  .mrow{margin-bottom:8px} .mrow .row{font-size:12px;margin-bottom:3px}
+  .mbar{height:7px;background:var(--card2);border-radius:9px;overflow:hidden} .mbar i{display:block;height:100%;border-radius:9px}
+  .agua{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+  .copo{width:30px;height:36px;border-radius:4px 4px 8px 8px;border:2px solid var(--line);background:none;cursor:pointer}
+  .copo.on{border-color:#38bdf8;background:linear-gradient(to top,#38bdf855 75%,transparent 75%)}
+  .meal{background:var(--card);border:1px solid var(--line);border-radius:18px;margin-bottom:10px;overflow:hidden}
+  .meal.done{border-color:#3ddc8466}
+  .mh{display:flex;align-items:center;gap:12px;padding:12px 14px;cursor:pointer}
+  .mh .ck{width:30px;height:30px;border-radius:50%;border:2px solid var(--line);display:grid;place-items:center;flex-shrink:0;background:none;color:transparent;font-weight:800;cursor:pointer}
+  .meal.done .ck{background:var(--ok);border-color:var(--ok);color:#062} .meal.skip .ck{border-color:var(--warn);color:var(--warn)}
+  .mh .t{flex:1;min-width:0} .mh b{font-size:15px} .mh .mut{font-size:12px}
+  .mh .k{font-size:13px;font-weight:700;text-align:right;white-space:nowrap}
+  .items{border-top:1px solid var(--line);padding:6px 14px 12px}
+  .it{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px dashed var(--line);font-size:14px} .it:last-child{border-bottom:0}
+  .it .q{color:var(--mut);font-size:12px} .it.troc .nm{color:var(--ac)}
+  .it .sw{background:var(--card2);border:1px solid var(--line);color:var(--tx);border-radius:9px;padding:5px 8px;font-size:12px;cursor:pointer;white-space:nowrap}
+  .mbtns{display:flex;gap:8px;margin-top:10px}
+  .kpis3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+  .kpis3 .kpi b{font-size:19px}
+  .days{display:flex;align-items:flex-end;gap:5px;height:120px;margin-top:12px}
+  .days>div{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:10px;color:var(--mut)}
+  .days i{display:block;width:100%;border-radius:5px 5px 2px 2px}
+  .grid5{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr 1fr;gap:5px}
+  .grid5 span{font-size:11px;color:var(--mut);display:block;text-align:center;margin-bottom:3px}
+  .grid5 .in{padding:8px 4px;text-align:center;font-size:14px}
 </style>
 </head>
 <body class="noauth">
@@ -208,6 +241,7 @@
     <button data-v="treino" onclick="A.go('treino')"><span class="dot" id="navDot" style="display:none"></span><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 7v10M18 7v10M3 10v4M21 10v4M6 12h12"/></svg>Treinar</button>
     <button data-v="evolucao" onclick="A.go('evolucao')"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Cargas</button>
     <button data-v="medidas" onclick="A.go('medidas')"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 8h18v8H3z"/><path d="M7 8v3M11 8v4M15 8v3M19 8v4"/></svg>Medidas</button>
+    <button data-v="dieta" onclick="A.go('dieta')"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M7 3v8a3 3 0 0 0 6 0V3M10 3v18M17 3c-1.7 0-3 2.2-3 5s1.3 4 3 4v9"/></svg>Dieta</button>
   </nav>
 </div>
 <div id="exTela"><div class="exh"><button onclick="A.fecharExercicio()" aria-label="Fechar">✕</button><b id="exNome"></b><button onclick="A.trocarVideo()" aria-label="Trocar vídeo" style="font-size:20px">⋯</button></div>
