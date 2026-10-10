@@ -1,7 +1,7 @@
 // ================================================================
 //  Treino v2 — PWA + Firebase (Auth, Firestore offline, AI Logic)
 // ================================================================
-export const VERSAO_APP = '2.3.0';
+export const VERSAO_APP = '2.4.0';
 const FB = 'https://www.gstatic.com/firebasejs/12.19.0/';
 
 import { firebaseConfig, RECAPTCHA_SITE_KEY, MODELO_IA, YOUTUBE_API_KEY } from './config.js';
@@ -99,7 +99,7 @@ function erroEscuta(e) { console.error(e); toast('Sem acesso aos dados: ' + (e.c
 let primeiraCarga = true;
 function aoMudar(o) {
   if (!Object.values(S.pronto).every(Boolean)) return;
-  if (primeiraCarga) { primeiraCarga = false; if (S.ativo) rota = 'treino'; render(); checarAvisoValidade(); checarMigracao(); return; }
+  if (primeiraCarga) { primeiraCarga = false; if (S.ativo) { rota = 'treino'; pilha.push('treino'); history.pushState({ rota: 'treino', i: 1 }, ''); } render(); checarAvisoValidade(); checarMigracao(); return; }
   if (['editar', 'prompt', 'auth', 'revisar', 'avaliacao', 'dietaTexto', 'dietaRevisar', 'dietaEditar'].includes(rota)) return;
   if (rota === 'dieta' && (o === 'diario' || o === 'plano') && document.getElementById('modal').classList.contains('show')) return; // não atrapalhar quem está digitando
   if (rota === 'treino' && S.ativo && o !== 'ativo') { $('navDot').style.display = 'block'; return; }
@@ -246,7 +246,30 @@ async function baixarICS(id) {
 
 // ================= Navegação =================
 let rota = 'fichas', draft = null, abertos = new Set(), importado = null;
-function go(v) { rota = v; render(); $('view').scrollTop = 0; }
+// Navegação com histórico: o botão "voltar" do celular volta telas e fecha janelas em vez de sair do app
+const TRANSITORIAS = new Set(['editar', 'prompt', 'revisar', 'avaliacao', 'dietaTexto', 'dietaRevisar', 'dietaEditar', '#camada']);
+let pilha = ['fichas'];
+function go(v, semHist) {
+  if (!semHist && v !== rota && S.user) {
+    if (TRANSITORIAS.has(rota)) { // saindo de um formulário: volta na pilha em vez de empilhar (não deixa telas "mortas")
+      let k = pilha.length - 2, passos = 1;
+      while (k >= 0 && pilha[k] !== v && TRANSITORIAS.has(pilha[k])) { k--; passos++; }
+      if (k >= 0 && pilha[k] === v) { history.go(-passos); return; }
+    }
+    pilha.push(v); history.pushState({ rota: v, i: pilha.length - 1 }, '');
+  }
+  rota = v; render(); $('view').scrollTop = 0;
+}
+const rascunhoOk = { editar: () => draft, revisar: () => importado, dietaRevisar: () => dietaImport, dietaEditar: () => rascPlano, avaliacao: () => rascAv };
+window.addEventListener('popstate', e => {
+  const st = e.state; if (st && Number.isInteger(st.i)) pilha.length = st.i + 1;
+  if ($('modal').classList.contains('show')) { $('modal').classList.remove('show'); return; }
+  if ($('exTela').classList.contains('show')) { fecharExercicio(true); return; }
+  if (!S.user || !st) return;
+  if (st.camada || (rascunhoOk[st.rota] && !rascunhoOk[st.rota]())) { history.back(); return; } // camada já fechada / formulário já concluído
+  rota = st.rota; render(); $('view').scrollTop = 0;
+});
+const empilharCamada = () => { pilha.push('#camada'); history.pushState({ rota, camada: true, i: pilha.length - 1 }, ''); };
 function render() {
   if (!configurado) return vNaoConfigurado();
   if (!S.user) return vAuth();
@@ -798,11 +821,11 @@ function prefetchPasso(g) {
 let exAberto = null, abaEx = 0;
 function abrirExercicio(i) {
   const e = S.ativo.itens[i]; exAberto = { i, nome: e.nome }; abaEx = 0;
-  $('exTela').classList.add('show'); renderExercicio();
+  if (!$('exTela').classList.contains('show')) empilharCamada(); $('exTela').classList.add('show'); renderExercicio();
   if (!e.videoId) garantirVideos(e.nome).then(v => { if (v[0] && exAberto?.nome === e.nome && !S.ativo.itens[i].videoId) { S.ativo.itens[i].videoId = v[0].id; salvarAtivo(); renderExercicio(); } });
   detalhesExercicio(e.nome).then(() => { if (exAberto?.nome === e.nome) renderExercicio(true); }).catch(() => {});
 }
-function fecharExercicio() { $('exTela').classList.remove('show'); $('exVideo').innerHTML = ''; exAberto = null; if (rota === 'treino') keepScroll(vTreino); }
+function fecharExercicio(viaVoltar) { $('exTela').classList.remove('show'); $('exVideo').innerHTML = ''; exAberto = null; if (rota === 'treino') keepScroll(vTreino); }
 function renderExercicio(soCorpo) {
   if (!exAberto || !S.ativo) return; const e = S.ativo.itens[exAberto.i]; const c = catCache[slug(e.nome)] || {};
   $('exNome').textContent = e.nome;
@@ -1164,8 +1187,10 @@ const SCHEMA_DIETA = { type: 'object', required: ['nome', 'refeicoes', 'metas'],
   validadeSemanas: { type: 'integer' },
   metas: { type: 'object', required: ['kcal', 'proteina', 'carboidrato', 'gordura'], properties: { kcal: { type: 'number' }, proteina: { type: 'number' }, carboidrato: { type: 'number' }, gordura: { type: 'number' }, aguaLitros: { type: 'number' } } },
   refeicoes: { type: 'array', items: { type: 'object', required: ['nome', 'itens'], properties: { horario: { type: 'string', description: 'HH:MM' }, nome: { type: 'string' },
-    itens: { type: 'array', items: { type: 'object', required: ['nome', 'quantidade', 'kcal', 'proteina', 'carboidrato', 'gordura', 'substitutos'], properties: {
-      nome: { type: 'string' }, quantidade: { type: 'string' }, kcal: { type: 'number' }, proteina: { type: 'number' }, carboidrato: { type: 'number' }, gordura: { type: 'number' },
+    itens: { type: 'array', items: { type: 'object', required: ['nome', 'quantidade', 'unidade', 'kcal', 'proteina', 'carboidrato', 'gordura', 'substitutos'], properties: {
+      nome: { type: 'string' }, quantidade: { type: 'string', description: 'Texto original da quantidade' },
+      quantidadeValor: { type: 'number', description: 'Só o número da quantidade (ex.: 150, 2, 0.5); omitir para "a gosto"' },
+      unidade: { type: 'string', enum: ['g', 'kg', 'ml', 'l', 'un', 'fatia', 'csopa', 'ccha', 'concha', 'xicara', 'copo', 'porcao', 'gosto'], description: 'g, kg, ml, l (litro), un (unidade), fatia, csopa (colher de sopa), ccha (colher de chá), concha, xicara, copo, porcao, gosto (a gosto)' }, kcal: { type: 'number' }, proteina: { type: 'number' }, carboidrato: { type: 'number' }, gordura: { type: 'number' },
       substitutos: { type: 'array', items: { type: 'string' } } } } } } } } } };
 const SCHEMA_ESTIMA = { type: 'object', required: ['itens'], properties: { itens: { type: 'array', items: { type: 'object', required: ['nome', 'kcal', 'proteina', 'carboidrato', 'gordura'],
   properties: { nome: { type: 'string' }, kcal: { type: 'number' }, proteina: { type: 'number' }, carboidrato: { type: 'number' }, gordura: { type: 'number' } } } } } };
@@ -1191,6 +1216,21 @@ async function iaEstimar(texto) {
   return (JSON.parse(r.response.text()).itens || []).map(x => ({ nome: String(x.nome), kcal: Math.round(num(x.kcal)), p: Math.round(num(x.proteina)), c: Math.round(num(x.carboidrato)), g: Math.round(num(x.gordura)) }));
 }
 const r0 = v => Math.round(num(v));
+const UNIDADES = [['g', 'g'], ['kg', 'kg'], ['ml', 'ml'], ['l', 'L'], ['un', 'unidade(s)'], ['fatia', 'fatia(s)'], ['csopa', 'colher(es) de sopa'], ['ccha', 'colher(es) de chá'],
+  ['concha', 'concha(s)'], ['xicara', 'xícara(s)'], ['copo', 'copo(s)'], ['porcao', 'porção(ões)'], ['gosto', 'a gosto']];
+const UN_CURTA = { g: 'g', kg: 'kg', ml: 'ml', l: 'L', un: 'un', fatia: 'fatia(s)', csopa: 'col. sopa', ccha: 'col. chá', concha: 'concha(s)', xicara: 'xícara(s)', copo: 'copo(s)', porcao: 'porção', gosto: 'a gosto' };
+function parseQtd(t) { // "150 g", "2 fatias", "1 col. chá" -> {qn, un}
+  const s = String(t || '').trim().toLowerCase(); if (!s || s === '—') return { qn: null, un: 'g' };
+  if (/gosto|vontade/.test(s)) return { qn: null, un: 'gosto' };
+  const m = s.match(/^([\d.,\/½¼]+)\s*(.*)$/); let n = null, r = s;
+  if (m) { r = m[2]; const x = m[1].replace('½', '.5').replace('¼', '.25'); n = x.includes('/') ? (() => { const [a, b] = x.split('/'); return num(a) / num(b); })() : num(x); }
+  const un = /^(kg|quilo)/.test(r) ? 'kg' : /^(ml|mililitro)/.test(r) ? 'ml' : /^(l\b|litro)/.test(r) ? 'l' : /^(g\b|gr|grama)/.test(r) ? 'g' : /fatia/.test(r) ? 'fatia' : /col.*ch[aá]/.test(r) ? 'ccha'
+    : /col/.test(r) ? 'csopa' : /concha/.test(r) ? 'concha' : /x[ií]cara/.test(r) ? 'xicara' : /copo/.test(r) ? 'copo' : /por[cç]/.test(r) ? 'porcao' : n != null ? 'un' : 'porcao';
+  return { qn: n || null, un };
+}
+const fmtQtd = it => { const un = it.un || parseQtd(it.qtd).un, qn = it.un ? it.qn : parseQtd(it.qtd).qn; if (un === 'gosto') return 'a gosto';
+  return qn != null ? `${fmtKg(qn)} ${UN_CURTA[un] || un}` : (it.qtd || UN_CURTA[un] || ''); };
+const normQtd = it => { if (it.un) return { qn: it.qn == null || it.qn === '' ? null : num(it.qn) || null, un: it.un }; return parseQtd(it.qtd); };
 const somaMac = arr => arr.reduce((a, x) => ({ kcal: a.kcal + r0(x.kcal), p: a.p + r0(x.p), c: a.c + r0(x.c), g: a.g + r0(x.g) }), { kcal: 0, p: 0, c: 0, g: 0 });
 const plano = () => S.plano;
 const diaDoc = d => S.diario.find(x => x.data === d) || { data: d, ref: {}, trocas: {}, agua: 0, extras: [] };
@@ -1234,7 +1274,7 @@ function vDieta() {
         <div class="t"><b>${esc(rf.n)}</b><div class="mut">${esc(rf.h || '')}${rf.h ? ' · ' : ''}${rf.itens.length} itens${est === 'skip' ? ' · <span style="color:var(--warn)">pulada</span>' : ''}</div></div>
         <div class="k">${s.kcal} kcal<div class="mut" style="font-weight:400">P${s.p} C${s.c} G${s.g}</div></div></div>
         ${refAberta === rf.id ? `<div class="items">${rf.itens.map(it => { const tr = D.trocas?.[rf.id + '_' + it.id];
-          return `<div class="it ${tr ? 'troc' : ''}"><div style="flex:1;min-width:0"><div class="nm">${esc(tr || it.nome)}</div><div class="q">${tr ? 'substituição · original: ' + esc(it.nome) : esc(it.qtd) + ' · ' + r0(it.kcal) + ' kcal'}</div></div>${it.subs?.length ? `<button class="sw" onclick="A.subsAlimento('${rf.id}','${it.id}')">⇄ Trocar</button>` : ''}</div>`; }).join('')}
+          return `<div class="it ${tr ? 'troc' : ''}"><div style="flex:1;min-width:0"><div class="nm">${esc(tr || it.nome)}</div><div class="q">${tr ? 'substituição · original: ' + esc(it.nome) : esc(fmtQtd(it)) + ' · ' + r0(it.kcal) + ' kcal'}</div></div>${it.subs?.length ? `<button class="sw" onclick="A.subsAlimento('${rf.id}','${it.id}')">⇄ Trocar</button>` : ''}</div>`; }).join('')}
           <div class="mbtns"><button class="btn sm ghost" onclick="A.marcaRef('${rf.id}','skip')">Pulei</button><button class="btn sm ghost" style="flex:1" onclick="A.comiOutra('${rf.id}')">✨ Comi outra coisa</button><button class="btn sm" onclick="A.marcaRef('${rf.id}','done',true)">Comi ✓</button></div></div>` : ''}</div>`; }).join('');
     if (D.extras?.length) h += `<div class="card"><b>Fora do plano</b>${D.extras.map(e => `<div class="row" style="margin-top:8px;font-size:14px"><span style="flex:1">${esc(e.desc)}</span><span class="mut">${r0(e.kcal)} kcal</span><button class="mini" onclick="A.removeExtra('${e.id}')" aria-label="Remover">✕</button></div>`).join('')}</div>`;
     h += `<button class="btn ghost" onclick="A.comiOutra(null)">+ Registrar algo fora do plano</button>`;
@@ -1244,7 +1284,7 @@ function vDieta() {
       ${st ? `<div style="margin-top:10px"><span class="chip ${st.cls}">${st.txt}</span></div>` : ''}</div>
       <div class="card"><b>Metas diárias</b><div class="mut" style="margin-top:6px;line-height:1.7">${r0(M.kcal)} kcal · Proteína ${r0(M.p)} g · Carboidrato ${r0(M.c)} g · Gordura ${r0(M.g)} g · Água ${fmtKg(metaAguaL())} L</div></div>
       ${P.refeicoes.map(rf => `<div class="card"><div class="row"><b>${esc(rf.h ? rf.h + ' · ' : '')}${esc(rf.n)}</b><span class="mut">${somaMac(rf.itens).kcal} kcal</span></div>
-        <div class="mut" style="margin-top:6px;line-height:1.6">${rf.itens.map(it => `${esc(it.nome)} (${esc(it.qtd)})${it.subs?.length ? ` <span style="color:var(--ac)">· ${it.subs.length} subst.</span>` : ''}`).join('<br>')}</div></div>`).join('')}
+        <div class="mut" style="margin-top:6px;line-height:1.6">${rf.itens.map(it => `${esc(it.nome)} (${esc(fmtQtd(it))})${it.subs?.length ? ` <span style="color:var(--ac)">· ${it.subs.length} subst.</span>` : ''}`).join('<br>')}</div></div>`).join('')}
       <div class="btns"><button class="btn" style="flex:1" onclick="A.go('dietaTexto')">✨ Novo plano por texto</button><button class="btn ghost" style="flex:1" onclick="A.editarPlano()">✎ Editar</button></div>`;
   } else {
     const dias = Array.from({ length: 14 }, (_, k) => { const d = new Date(); d.setDate(d.getDate() - 13 + k); return ymd(d); });
@@ -1277,7 +1317,7 @@ function marcaRef(id, v, avancar) {
 }
 function subsAlimento(rid, iid) {
   const rf = plano().refeicoes.find(r => r.id === rid), it = rf.itens.find(x => x.id === iid), D = diaDoc(diaSel), tr = D.trocas?.[rid + '_' + iid];
-  openModal(`<h2>Trocar ${esc(it.nome)} (${esc(it.qtd)})</h2><div class="mut" style="margin-bottom:6px">Substituições do seu plano:</div>
+  openModal(`<h2>Trocar ${esc(it.nome)} (${esc(fmtQtd(it))})</h2><div class="mut" style="margin-bottom:6px">Substituições do seu plano:</div>
     ${it.subs.map((s, k) => `<div class="opt" style="cursor:pointer" onclick="A.trocaAlimento('${rid}','${iid}',${k})"><span>${esc(s)}</span><span class="mut">usar ›</span></div>`).join('')}
     ${tr ? `<div class="opt" style="cursor:pointer" onclick="A.trocaAlimento('${rid}','${iid}',-1)"><span>Voltar ao original</span></div>` : ''}
     <div class="mut" style="font-size:12px;margin-top:10px">A troca vale só para este dia. As calorias consideradas são as do item original (substituições do plano são equivalentes).</div>
@@ -1332,7 +1372,8 @@ async function gerarDieta() {
   try {
     const r = await iaImportarDieta(t);
     const refeicoes = (r.refeicoes || []).map(rf => ({ id: uid(), h: String(rf.horario || '').slice(0, 5), n: String(rf.nome || 'Refeição').trim(),
-      itens: (rf.itens || []).map(it => ({ id: uid(), nome: String(it.nome).trim(), qtd: String(it.quantidade || '').trim(), kcal: r0(it.kcal), p: r0(it.proteina), c: r0(it.carboidrato), g: r0(it.gordura),
+      itens: (rf.itens || []).map(it => ({ id: uid(), nome: String(it.nome).trim(), qtd: String(it.quantidade || '').trim(),
+        ...(it.unidade && UN_CURTA[it.unidade] ? { un: it.unidade, qn: it.unidade === 'gosto' ? null : (num(it.quantidadeValor) || parseQtd(it.quantidade).qn) } : parseQtd(it.quantidade)), kcal: r0(it.kcal), p: r0(it.proteina), c: r0(it.carboidrato), g: r0(it.gordura),
         subs: (it.substitutos || []).filter(x => typeof x === 'string' && x.trim()).slice(0, 6) })).filter(it => it.nome) })).filter(rf => rf.itens.length);
     if (!refeicoes.length) throw new Error('Não encontrei refeições no texto.');
     const tot = somaMac(refeicoes.flatMap(x => x.itens)), M = r.metas || {};
@@ -1348,7 +1389,7 @@ function vDietaRevisar() {
   $('view').innerHTML = `<div class="card"><b>Metas diárias</b><div class="mut" style="margin-top:6px">${I.metas.kcal} kcal · P ${I.metas.p} g · C ${I.metas.c} g · G ${I.metas.g} g${I.metas.agua ? ' · Água ' + fmtKg(I.metas.agua) + ' L' : ''}</div>
       <div class="mut" style="font-size:12px;margin-top:4px">Soma dos itens: ${tot.kcal} kcal · P${tot.p} C${tot.c} G${tot.g}</div></div>
     ${I.refeicoes.map(rf => `<div class="card"><div class="row"><b>${esc(rf.h ? rf.h + ' · ' : '')}${esc(rf.n)}</b><span class="mut">${somaMac(rf.itens).kcal} kcal</span></div>
-      ${rf.itens.map(it => `<div style="margin-top:8px"><div style="font-size:14px">${esc(it.nome)} <span class="mut">(${esc(it.qtd)})</span></div><div class="mut" style="font-size:12px">${it.kcal} kcal · P${it.p} C${it.c} G${it.g}${it.subs.length ? ' · subst.: ' + it.subs.map(esc).join(', ') : ''}</div></div>`).join('')}</div>`).join('')}
+      ${rf.itens.map(it => `<div style="margin-top:8px"><div style="font-size:14px">${esc(it.nome)} <span class="mut">(${esc(fmtQtd(it))})</span></div><div class="mut" style="font-size:12px">${it.kcal} kcal · P${it.p} C${it.c} G${it.g}${it.subs.length ? ' · subst.: ' + it.subs.map(esc).join(', ') : ''}</div></div>`).join('')}</div>`).join('')}
     <div class="card"><label class="f" style="margin-top:0">Validade do plano</label><input type="date" class="in" value="${esc(I.validade)}" onchange="A.setDietaImp('validade',this.value)"></div>
     ${plano() ? `<div class="mut" style="text-align:center;margin-bottom:10px">Este plano substitui o atual ("${esc(plano().nome)}"). O histórico de dias é mantido.</div>` : ''}
     <button class="btn" onclick="A.salvarDietaImport()">Salvar plano</button>
@@ -1374,13 +1415,16 @@ function vDietaEditar() {
   $('view').innerHTML = `<div class="card"><label class="f" style="margin-top:0">Nome do plano</label><input class="in" value="${esc(R.nome)}" placeholder="Ex.: Hipertrofia" oninput="A.dp('nome',this.value)">
     <label class="f">Validade</label><input type="date" class="in" value="${esc(R.validade || '')}" onchange="A.dp('validade',this.value)">
     <label class="f">Metas diárias</label><div class="fgrid">${[['kcal', 'Calorias (kcal)'], ['p', 'Proteína (g)'], ['c', 'Carboidrato (g)'], ['g', 'Gordura (g)'], ['agua', 'Água (L)']].map(([k, n]) => `<div><label>${n}</label><input class="in" inputmode="decimal" value="${v(R.metas?.[k])}" oninput="A.dm('${k}',this.value)"></div>`).join('')}</div>
-    <button class="link ac" onclick="A.metasDosItens()">Calcular metas pela soma dos itens</button></div>
+    <button class="link ac" onclick="A.metasDosItens()">Calcular metas pela soma dos itens</button>
+    <div class="mut" style="font-size:12px">Dica: ao mudar a quantidade de um alimento, as calorias e os macros dele são recalculados na mesma proporção.</div></div>
     ${R.refeicoes.map((rf, i) => `<div class="card"><div style="display:grid;grid-template-columns:76px 1fr 34px;gap:8px;align-items:end">
         <div><span class="mut" style="font-size:11px">Horário</span><input class="in" style="padding:9px" value="${esc(rf.h)}" placeholder="07:00" oninput="A.dr(${i},'h',this.value)"></div>
         <div><span class="mut" style="font-size:11px">Refeição</span><input class="in" style="padding:9px" value="${esc(rf.n)}" oninput="A.dr(${i},'n',this.value)"></div>
         <button class="icon-btn sm" style="color:var(--bad)" onclick="A.remRef(${i})">✕</button></div>
       ${rf.itens.map((it, j) => `<div class="exedit"><div class="row" style="margin-bottom:6px"><input class="in" style="padding:9px" value="${esc(it.nome)}" placeholder="Alimento" oninput="A.di(${i},${j},'nome',this.value)"><button class="icon-btn sm" style="color:var(--mut)" onclick="A.remItem(${i},${j})">✕</button></div>
-        <div class="grid5">${[['qtd', 'Qtd.'], ['kcal', 'kcal'], ['p', 'P'], ['c', 'C'], ['g', 'G']].map(([k, n]) => `<div><span>${n}</span><input class="in" ${k === 'qtd' ? '' : 'inputmode="decimal"'} value="${k === 'qtd' ? esc(it.qtd) : v(it[k])}" oninput="A.di(${i},${j},'${k}',this.value)"></div>`).join('')}</div>
+        ${(() => { const q = normQtd(it); return `<div class="qtdrow"><div><span>Quantidade</span><input class="in" inputmode="decimal" value="${q.un === 'gosto' ? '' : v(q.qn)}" ${q.un === 'gosto' ? 'disabled placeholder="—"' : 'placeholder="0"'} onchange="A.dqn(${i},${j},this.value)"></div>
+          <div><span>Unidade</span><select class="in" onchange="A.dun(${i},${j},this.value)">${UNIDADES.map(([k, n]) => `<option value="${k}" ${k === q.un ? 'selected' : ''}>${n}</option>`).join('')}</select></div></div>`; })()}
+        <div class="grid4m">${[['kcal', 'kcal'], ['p', 'Prot. g'], ['c', 'Carb. g'], ['g', 'Gord. g']].map(([k, n]) => `<div><span>${n}</span><input class="in" inputmode="decimal" value="${v(it[k])}" oninput="A.di(${i},${j},'${k}',this.value)"></div>`).join('')}</div>
         <input class="in" style="padding:9px;margin-top:6px;font-size:13px" value="${esc((it.subs || []).join('; '))}" placeholder="Substituições (separe com ;)" oninput="A.di(${i},${j},'subs',this.value)"></div>`).join('')}
       <button class="link ac" onclick="A.addItem(${i})">+ alimento</button></div>`).join('')}
     <button class="btn ghost" onclick="A.addRef()">+ Refeição</button>
@@ -1391,7 +1435,13 @@ const dp = (k, v) => { rascPlano[k] = v; };
 const dm = (k, v) => { rascPlano.metas = rascPlano.metas || {}; rascPlano.metas[k] = v; };
 const dr = (i, k, v) => { rascPlano.refeicoes[i][k] = v; };
 const di = (i, j, k, v) => { rascPlano.refeicoes[i].itens[j][k] = k === 'subs' ? v.split(';').map(x => x.trim()).filter(Boolean) : v; };
-function addItem(i) { rascPlano.refeicoes[i].itens.push({ id: uid(), nome: '', qtd: '', kcal: '', p: '', c: '', g: '', subs: [] }); keepScroll(vDietaEditar); }
+function addItem(i) { rascPlano.refeicoes[i].itens.push({ id: uid(), nome: '', qtd: '', qn: null, un: 'g', kcal: '', p: '', c: '', g: '', subs: [] }); keepScroll(vDietaEditar); }
+function dqn(i, j, val) { // muda quantidade e escala macros proporcionalmente
+  const it = rascPlano.refeicoes[i].itens[j]; const q = normQtd(it); const novo = val === '' ? null : num(val) || null;
+  if (q.qn > 0 && novo > 0 && ['kcal', 'p', 'c', 'g'].some(k => num(it[k]) > 0)) { const f = novo / q.qn; ['kcal', 'p', 'c', 'g'].forEach(k => { if (it[k] !== '' && it[k] != null) it[k] = Math.round(num(it[k]) * f * 10) / 10; }); }
+  it.qn = novo; it.un = q.un; it.qtd = fmtQtd(it); keepScroll(vDietaEditar);
+}
+function dun(i, j, un) { const it = rascPlano.refeicoes[i].itens[j]; const q = normQtd(it); it.un = un; it.qn = un === 'gosto' ? null : q.qn; it.qtd = fmtQtd(it); keepScroll(vDietaEditar); }
 function remItem(i, j) { rascPlano.refeicoes[i].itens.splice(j, 1); keepScroll(vDietaEditar); }
 function addRef() { rascPlano.refeicoes.push({ id: uid(), h: '', n: 'Refeição', itens: [] }); keepScroll(vDietaEditar); }
 function remRef(i) { if (!confirm('Remover esta refeição?')) return; rascPlano.refeicoes.splice(i, 1); keepScroll(vDietaEditar); }
@@ -1399,7 +1449,7 @@ function metasDosItens() { const t = somaMac(rascPlano.refeicoes.flatMap(r => r.
 function salvarPlanoManual() {
   const R = rascPlano; R.nome = String(R.nome || '').trim(); if (!R.nome) return toast('Dê um nome ao plano');
   R.refeicoes = R.refeicoes.map(rf => ({ id: rf.id || uid(), h: String(rf.h || '').trim().slice(0, 5), n: String(rf.n || 'Refeição').trim(),
-    itens: rf.itens.filter(it => String(it.nome).trim()).map(it => ({ id: it.id || uid(), nome: String(it.nome).trim(), qtd: String(it.qtd || '').trim(), kcal: r0(it.kcal), p: r0(it.p), c: r0(it.c), g: r0(it.g), subs: it.subs || [] })) }))
+    itens: rf.itens.filter(it => String(it.nome).trim()).map(it => ({ id: it.id || uid(), nome: String(it.nome).trim(), ...normQtd(it), qtd: fmtQtd({ ...it, ...normQtd(it) }), kcal: r0(it.kcal), p: r0(it.p), c: r0(it.c), g: r0(it.g), subs: it.subs || [] })) }))
     .filter(rf => rf.itens.length);
   if (!R.refeicoes.length) return toast('Adicione pelo menos uma refeição com alimentos');
   const t = somaMac(R.refeicoes.flatMap(r => r.itens)), M = R.metas || {};
@@ -1409,7 +1459,7 @@ function salvarPlanoManual() {
 function excluirPlano() { if (!confirm('Excluir o plano alimentar? O histórico de dias é mantido.')) return; S.plano = null; deleteDoc(uref('dieta', 'atual')).catch(falhou); rascPlano = null; go('dieta'); }
 
 // ================= Modal =================
-function openModal(h) { $('sheet').innerHTML = h; $('modal').classList.add('show'); }
+function openModal(h) { $('sheet').innerHTML = h; if (!$('modal').classList.contains('show')) empilharCamada(); $('modal').classList.add('show'); }
 function closeModal() { $('modal').classList.remove('show'); }
 
 // ================= Atualização automática (service worker) =================
@@ -1446,14 +1496,14 @@ window.A = { go, editar, df, d, ds, toggleBi, moverEx, removerEx, addEx, addSeri
   novaAvaliacao, editarAvaliacao, av, avDobra, salvarAvaliacao, excluirAvaliacao, salvarCorpo,
   abaMed: k => { abaMed = k; vMedidas(); }, medSel: k => { medSel = k; keepScroll(vMedidas); }, cmp: (q, v) => { if (q === 'a') cmpA = +v; else cmpB = +v; keepScroll(vMedidas); },
   abaDieta: k => { abaDieta = k; refAberta = null; vDieta(); }, mudaDia, agua: aguaClick, abreRef, marcaRef, subsAlimento, trocaAlimento, comiOutra, estimar, registrarExtra, removeExtra,
-  setTextoDieta: v => { textoDieta = v; }, gerarDieta, setDietaImp: (k, v) => { dietaImport[k] = v; }, salvarDietaImport, editarPlano, dp, dm, dr, di, addItem, remItem, addRef, remRef, metasDosItens, salvarPlanoManual, excluirPlano,
+  setTextoDieta: v => { textoDieta = v; }, gerarDieta, setDietaImp: (k, v) => { dietaImport[k] = v; }, salvarDietaImport, editarPlano, dp, dm, dr, di, dqn, dun, addItem, remItem, addRef, remRef, metasDosItens, salvarPlanoManual, excluirPlano,
   modo: m => { modoAuth = m; vAuth(); } };
 
 if (!configurado) render();
 else onAuthStateChanged(auth, u => {
   S.user = u;
   if (!u) { unsubs.forEach(x => x()); unsubs = []; S.fichas = []; S.sessoes = []; S.avaliacoes = []; S.plano = null; S.diario = []; S.ativo = null; document.body.classList.remove('emtreino'); $('tBar').style.display = 'none'; pararTimerUI(); modoAuth = 'entrar'; render(); return; }
-  document.body.classList.remove('noauth'); rota = 'fichas'; primeiraCarga = true;
+  document.body.classList.remove('noauth'); rota = 'fichas'; primeiraCarga = true; pilha = ['fichas']; history.replaceState({ rota: 'fichas', i: 0 }, '');
   S.pronto = { fichas: false, sessoes: false, perfil: false, ativo: false, avaliacoes: false, plano: false, diario: false };
   setHdr('', 'Treino'); $('view').innerHTML = '<div class="empty"><span class="spin"></span>Carregando seus treinos…</div>';
   escutar();
