@@ -1,7 +1,7 @@
 // ================================================================
 //  Treino v2 — PWA + Firebase (Auth, Firestore offline, AI Logic)
 // ================================================================
-export const VERSAO_APP = '2.4.0';
+export const VERSAO_APP = '2.5.0';
 const FB = 'https://www.gstatic.com/firebasejs/12.19.0/';
 
 import { firebaseConfig, RECAPTCHA_SITE_KEY, MODELO_IA, YOUTUBE_API_KEY } from './config.js';
@@ -1181,7 +1181,7 @@ function salvarCorpo() {
 
 // ================= Dieta =================
 // plano: users/{uid}/dieta/atual = {nome, validade, criadoEm, metas:{kcal,p,c,g,agua(L)}, refeicoes:[{id,h,n,itens:[{id,nome,qtd,kcal,p,c,g,subs[]}]}]}
-// diário: users/{uid}/diario/{YYYY-MM-DD} = {data, ref:{[refId]:'done'|'skip'}, trocas:{[refId_itemId]:texto}, agua, extras:[{id,desc,kcal,p,c,g}]}
+// diário: users/{uid}/diario/{YYYY-MM-DD} = {data, ref:{[refId]:'done'|'alt'|'skip'}, alt:{[refId]:{desc,kcal,p,c,g,itens[]}}, trocas:{[refId_itemId]:texto}, agua, extras:[{id,desc,kcal,p,c,g}]}
 const SCHEMA_DIETA = { type: 'object', required: ['nome', 'refeicoes', 'metas'], properties: {
   nome: { type: 'string', description: 'Nome/objetivo do plano, ex.: "Hipertrofia"' },
   validadeSemanas: { type: 'integer' },
@@ -1237,12 +1237,13 @@ const diaDoc = d => S.diario.find(x => x.data === d) || { data: d, ref: {}, troc
 function metaAguaL() { const m = plano()?.metas?.agua; if (m) return m; const p = [...S.avaliacoes].reverse().find(a => a.peso)?.peso; return p ? Math.round(p * 0.035 * 4) / 4 : 3; }
 function consumoDia(d) {
   const P = plano(), D = diaDoc(d); const t = { kcal: 0, p: 0, c: 0, g: 0 };
-  (P?.refeicoes || []).forEach(rf => { if (D.ref?.[rf.id] === 'done') { const s = somaMac(rf.itens); for (const k in t) t[k] += s[k]; } });
+  (P?.refeicoes || []).forEach(rf => { const e = D.ref?.[rf.id];
+    const s = e === 'done' ? somaMac(rf.itens) : e === 'alt' && D.alt?.[rf.id] ? somaMac([D.alt[rf.id]]) : null; if (s) for (const k in t) t[k] += s[k]; });
   const e = somaMac(D.extras || []); for (const k in t) t[k] += e[k];
   return t;
 }
 function adesaoDia(d) { const P = plano(); const n = P?.refeicoes?.length || 0; if (!n) return null; const D = S.diario.find(x => x.data === d); if (!D) return null;
-  const f = P.refeicoes.filter(r => D.ref?.[r.id] === 'done').length; const marc = P.refeicoes.filter(r => D.ref?.[r.id]).length; return marc ? Math.round(f / n * 100) : null; }
+  const f = P.refeicoes.filter(r => D.ref?.[r.id] === 'done').length + P.refeicoes.filter(r => D.ref?.[r.id] === 'alt').length * 0.5; const marc = P.refeicoes.filter(r => D.ref?.[r.id]).length; return marc ? Math.round(f / n * 100) : null; }
 let diaSel = null, abaDieta = 'hoje', refAberta = null, salvarDiaT = null;
 function salvarDia(D) {
   const i = S.diario.findIndex(x => x.data === D.data); if (i >= 0) S.diario[i] = D; else S.diario.unshift(D);
@@ -1269,13 +1270,17 @@ function vDieta() {
       <div class="row" style="margin-top:14px"><b style="font-size:14px">💧 Água</b><span class="mut">${fmtKg((D.agua || 0) * 0.25)} / ${fmtKg(copos * 0.25)} L</span></div>
       <div class="agua">${Array.from({ length: Math.max(copos, D.agua || 0) }, (_, i) => `<button class="copo ${i < (D.agua || 0) ? 'on' : ''}" onclick="A.agua(${i})" aria-label="Copo ${i + 1}"></button>`).join('')}</div>
       <div class="mut" style="font-size:11px;margin-top:6px">Cada copo = 250 ml${P.metas?.agua ? '' : ' · meta: 35 ml por kg (aba Medidas)'}</div></div>`;
-    h += P.refeicoes.map(rf => { const s = somaMac(rf.itens), est = D.ref?.[rf.id] || '';
-      return `<div class="meal ${est}"><div class="mh" onclick="A.abreRef('${rf.id}')"><button class="ck" onclick="event.stopPropagation();A.marcaRef('${rf.id}','done')" aria-label="Comi">${est === 'skip' ? '!' : '✓'}</button>
-        <div class="t"><b>${esc(rf.n)}</b><div class="mut">${esc(rf.h || '')}${rf.h ? ' · ' : ''}${rf.itens.length} itens${est === 'skip' ? ' · <span style="color:var(--warn)">pulada</span>' : ''}</div></div>
-        <div class="k">${s.kcal} kcal<div class="mut" style="font-weight:400">P${s.p} C${s.c} G${s.g}</div></div></div>
-        ${refAberta === rf.id ? `<div class="items">${rf.itens.map(it => { const tr = D.trocas?.[rf.id + '_' + it.id];
-          return `<div class="it ${tr ? 'troc' : ''}"><div style="flex:1;min-width:0"><div class="nm">${esc(tr || it.nome)}</div><div class="q">${tr ? 'substituição · original: ' + esc(it.nome) : esc(fmtQtd(it)) + ' · ' + r0(it.kcal) + ' kcal'}</div></div>${it.subs?.length ? `<button class="sw" onclick="A.subsAlimento('${rf.id}','${it.id}')">⇄ Trocar</button>` : ''}</div>`; }).join('')}
-          <div class="mbtns"><button class="btn sm ghost" onclick="A.marcaRef('${rf.id}','skip')">Pulei</button><button class="btn sm ghost" style="flex:1" onclick="A.comiOutra('${rf.id}')">✨ Comi outra coisa</button><button class="btn sm" onclick="A.marcaRef('${rf.id}','done',true)">Comi ✓</button></div></div>` : ''}</div>`; }).join('');
+    h += P.refeicoes.map(rf => { const est = D.ref?.[rf.id] || '', alt = est === 'alt' ? D.alt?.[rf.id] : null, s = alt ? somaMac([alt]) : somaMac(rf.itens);
+      return `<div class="meal ${est === 'alt' ? 'done alt' : est}"><div class="mh" onclick="A.abreRef('${rf.id}')"><button class="ck" onclick="event.stopPropagation();A.marcaRef('${rf.id}','done')" aria-label="Comi">${est === 'skip' ? '!' : '✓'}</button>
+        <div class="t"><b>${esc(rf.n)}</b><div class="mut">${esc(rf.h || '')}${rf.h ? ' · ' : ''}${alt ? '<span style="color:var(--bi)">comi diferente</span>' : rf.itens.length + ' itens'}${est === 'skip' ? ' · <span style="color:var(--warn)">pulada</span>' : ''}</div></div>
+        <div class="k">${s.kcal} kcal<div class="mut" style="font-weight:400">${alt ? 'plano: ' + somaMac(rf.itens).kcal : `P${s.p} C${s.c} G${s.g}`}</div></div></div>
+        ${refAberta === rf.id ? `<div class="items">${alt ? `<div class="altbox"><small>O que comi</small><div>${esc(alt.desc)}</div>
+            ${alt.itens?.length ? `<div class="mut" style="font-size:12px;margin-top:4px">${alt.itens.map(x => `${esc(x.nome)} ≈ ${x.kcal} kcal`).join(' · ')}</div>` : ''}
+            <div class="mut" style="font-size:12px;margin-top:4px">≈ ${s.kcal} kcal · P${s.p} C${s.c} G${s.g}</div>
+            <div class="btns" style="margin-top:8px"><button class="btn sm ghost" onclick="A.comiOutra('${rf.id}')">✎ Editar</button><button class="btn sm ghost" onclick="A.voltarPlano('${rf.id}')">↺ Voltar ao plano</button></div></div>
+            <div class="mut" style="font-size:12px;margin:10px 0 2px">Previsto no plano:</div>` : ''}${rf.itens.map(it => { const tr = D.trocas?.[rf.id + '_' + it.id];
+          return `<div class="it ${tr ? 'troc' : ''} ${alt ? 'riscado' : ''}"><div style="flex:1;min-width:0"><div class="nm">${esc(tr || it.nome)}</div><div class="q">${tr ? 'substituição · original: ' + esc(it.nome) : esc(fmtQtd(it)) + ' · ' + r0(it.kcal) + ' kcal'}</div></div>${it.subs?.length && !alt ? `<button class="sw" onclick="A.subsAlimento('${rf.id}','${it.id}')">⇄ Trocar</button>` : ''}</div>`; }).join('')}
+          ${alt ? '' : `<div class="mbtns"><button class="btn sm ghost" onclick="A.marcaRef('${rf.id}','skip')">Pulei</button><button class="btn sm ghost" style="flex:1" onclick="A.comiOutra('${rf.id}')">✨ Comi outra coisa</button><button class="btn sm" onclick="A.marcaRef('${rf.id}','done',true)">Comi ✓</button></div>`}</div>` : ''}</div>`; }).join('');
     if (D.extras?.length) h += `<div class="card"><b>Fora do plano</b>${D.extras.map(e => `<div class="row" style="margin-top:8px;font-size:14px"><span style="flex:1">${esc(e.desc)}</span><span class="mut">${r0(e.kcal)} kcal</span><button class="mini" onclick="A.removeExtra('${e.id}')" aria-label="Remover">✕</button></div>`).join('')}</div>`;
     h += `<button class="btn ghost" onclick="A.comiOutra(null)">+ Registrar algo fora do plano</button>`;
   } else if (abaDieta === 'plano') {
@@ -1293,7 +1298,7 @@ function vDieta() {
     const kc = comReg.map(d => consumoDia(d)), med = k => kc.length ? Math.round(kc.reduce((a, x) => a + x[k], 0) / kc.length) : null;
     const ag = comReg.map(d => (diaDoc(d).agua || 0) * 0.25), medAg = ag.length ? ag.reduce((a, b) => a + b, 0) / ag.length : null;
     h += `<div class="kpis3"><div class="kpi"><b>${medA == null ? '—' : medA + '%'}</b><span class="mut">adesão média</span></div><div class="kpi"><b>${med('kcal') ?? '—'}</b><span class="mut">kcal/dia</span></div><div class="kpi"><b>${medAg == null ? '—' : fmtKg(Math.round(medAg * 10) / 10) + ' L'}</b><span class="mut">água/dia</span></div></div>
-      <div class="card"><b>Adesão ao plano</b><div class="mut">% das refeições do plano cumpridas por dia</div>
+      <div class="card"><b>Adesão ao plano</b><div class="mut">% das refeições do plano cumpridas por dia (refeição feita com algo diferente conta metade)</div>
       <div class="days">${dias.map(d => { const v = adesaoDia(d); return `<div><i style="height:${v == null ? 3 : Math.max(v * .95, 3)}px;background:${v == null ? 'var(--card2)' : v >= 90 ? 'var(--ok)' : v >= 70 ? 'var(--warn)' : 'var(--bad)'}"></i>${new Date(d + 'T00:00').getDate()}</div>`; }).join('')}</div></div>`;
     if (med('p') != null && P.metas?.p) { const pc = Math.round(med('p') / P.metas.p * 100); h += `<div class="card"><b>Proteína média</b><div class="row" style="margin-top:6px"><span class="mut">${med('p')} g/dia · meta ${r0(P.metas.p)} g</span><span style="font-weight:600;color:${pc >= 95 ? 'var(--ok)' : 'var(--warn)'}">${pc}%</span></div><div class="mbar" style="margin-top:6px"><i style="width:${Math.min(pc, 100)}%;background:#7aa7ff"></i></div></div>`; }
     const ini = P.criadoEm ? ymd(new Date(P.criadoEm)) : null; const av = ini ? S.avaliacoes.filter(a => a.data >= ini) : [];
@@ -1311,7 +1316,10 @@ function mudaDia(dd) { const d = new Date(diaSel + 'T00:00'); d.setDate(d.getDat
 function aguaClick(i) { const D = clone(diaDoc(diaSel)); D.agua = i < (D.agua || 0) ? i : i + 1; salvarDia(D); keepScroll(vDieta); }
 function abreRef(id) { refAberta = refAberta === id ? null : id; keepScroll(vDieta); }
 function marcaRef(id, v, avancar) {
-  const D = clone(diaDoc(diaSel)); D.ref = D.ref || {}; D.ref[id] = D.ref[id] === v && !avancar ? null : v; if (!D.ref[id]) delete D.ref[id]; salvarDia(D);
+  const D = clone(diaDoc(diaSel)); D.ref = D.ref || {};
+  if (D.ref[id] === 'alt' && !avancar) { if (!confirm('Desmarcar esta refeição e apagar o que você registrou?')) return; delete D.ref[id]; if (D.alt) delete D.alt[id]; }
+  else { D.ref[id] = D.ref[id] === v && !avancar ? null : v; if (!D.ref[id]) delete D.ref[id]; if (D.alt) delete D.alt[id]; }
+  salvarDia(D);
   if (avancar) { const rs = plano().refeicoes; const k = rs.findIndex(r => r.id === id); refAberta = rs.slice(k + 1).find(r => !D.ref[r.id])?.id || null; }
   keepScroll(vDieta);
 }
@@ -1331,8 +1339,9 @@ function trocaAlimento(rid, iid, k) {
 let estimativa = null;
 function comiOutra(rid) {
   estimativa = null;
-  openModal(`<h2>${rid ? 'Comi outra coisa' : 'Fora do plano'}</h2><div class="mut" style="margin-bottom:10px">Descreva o que comeu (com quantidades, se souber). A IA estima calorias e macros.</div>
-    <textarea class="in" id="estTxt" style="min-height:100px" placeholder="Ex.: 2 fatias de pizza de calabresa e 1 lata de coca zero"></textarea>
+  const rf = rid ? plano().refeicoes.find(r => r.id === rid) : null, atual = rid ? diaDoc(diaSel).alt?.[rid] : null;
+  openModal(`<h2>${rf ? esc(rf.n) + ': comi outra coisa' : 'Fora do plano'}</h2><div class="mut" style="margin-bottom:10px">${rf ? 'A refeição fica marcada como feita, com o que você comeu no lugar do plano.' : 'Para lanches extras, fora das refeições do plano.'} Descreva com quantidades, se souber; a IA estima calorias e macros.</div>
+    <textarea class="in" id="estTxt" style="min-height:100px" placeholder="Ex.: 2 fatias de pizza de calabresa e 1 lata de coca zero">${esc(atual?.desc || '')}</textarea>
     <button class="btn" id="estBtn" style="margin-top:10px" onclick="A.estimar(${rid ? `'${rid}'` : 'null'})">✨ Estimar</button><div id="estOut"></div>`);
 }
 async function estimar(rid) {
@@ -1341,18 +1350,21 @@ async function estimar(rid) {
   const b = $('estBtn'); b.disabled = true; b.innerHTML = '<span class="spin"></span>Estimando…';
   try {
     const itens = await iaEstimar(t); if (!itens.length) throw new Error('Não consegui identificar alimentos.');
-    const s = somaMac(itens); estimativa = { desc: t.slice(0, 140), ...s, rid };
+    const s = somaMac(itens); estimativa = { desc: t.slice(0, 200), ...s, rid, itens };
     $('estOut').innerHTML = `<div class="calc"><b>Estimativa</b><br>${itens.map(x => `${esc(x.nome)} ≈ ${x.kcal} kcal · P${x.p} C${x.c} G${x.g}`).join('<br>')}<br><b>Total ≈ ${s.kcal} kcal</b> · <span class="mut">valores aproximados</span></div>
       <div class="btns" style="margin-top:10px"><button class="btn ghost" style="flex:1" onclick="A.closeModal()">Cancelar</button><button class="btn" style="flex:1" onclick="A.registrarExtra()">Registrar</button></div>`;
     b.style.display = 'none';
   } catch (e) { toast(erroIA(e), 5000); b.disabled = false; b.textContent = '✨ Estimar'; }
 }
 function registrarExtra() {
-  if (!estimativa) return; const D = clone(diaDoc(diaSel)); D.extras = D.extras || [];
-  D.extras.push({ id: uid(), desc: estimativa.desc, kcal: estimativa.kcal, p: estimativa.p, c: estimativa.c, g: estimativa.g });
-  if (estimativa.rid) { D.ref = D.ref || {}; D.ref[estimativa.rid] = 'skip'; }
-  salvarDia(D); estimativa = null; closeModal(); keepScroll(vDieta); toast('Registrado');
+  if (!estimativa) return; const E = estimativa, D = clone(diaDoc(diaSel)), mac = { kcal: E.kcal, p: E.p, c: E.c, g: E.g };
+  if (E.rid) { // refeição feita, com o que foi comido no lugar do plano
+    D.ref = D.ref || {}; D.alt = D.alt || {}; D.ref[E.rid] = 'alt'; D.alt[E.rid] = { desc: E.desc, ...mac, itens: E.itens.slice(0, 12) };
+    const rs = plano().refeicoes, k = rs.findIndex(r => r.id === E.rid); refAberta = rs.slice(k + 1).find(r => !D.ref[r.id])?.id || null;
+  } else { D.extras = D.extras || []; D.extras.push({ id: uid(), desc: E.desc, ...mac }); }
+  salvarDia(D); estimativa = null; closeModal(); keepScroll(vDieta); toast(E.rid ? 'Refeição registrada' : 'Registrado');
 }
+function voltarPlano(rid) { const D = clone(diaDoc(diaSel)); D.ref = D.ref || {}; D.ref[rid] = 'done'; if (D.alt) delete D.alt[rid]; salvarDia(D); keepScroll(vDieta); toast('Marcada como feita conforme o plano'); }
 function removeExtra(id) { const D = clone(diaDoc(diaSel)); D.extras = (D.extras || []).filter(e => e.id !== id); salvarDia(D); keepScroll(vDieta); }
 
 // ---------- Cadastro do plano por texto ----------
@@ -1495,7 +1507,7 @@ window.A = { go, editar, df, d, ds, toggleBi, moverEx, removerEx, addEx, addSeri
   apagarTudo, migrar, naoMigrar, openModal, closeModal, baixarICS, sair, enviarAuth, verificarAtualizacao,
   novaAvaliacao, editarAvaliacao, av, avDobra, salvarAvaliacao, excluirAvaliacao, salvarCorpo,
   abaMed: k => { abaMed = k; vMedidas(); }, medSel: k => { medSel = k; keepScroll(vMedidas); }, cmp: (q, v) => { if (q === 'a') cmpA = +v; else cmpB = +v; keepScroll(vMedidas); },
-  abaDieta: k => { abaDieta = k; refAberta = null; vDieta(); }, mudaDia, agua: aguaClick, abreRef, marcaRef, subsAlimento, trocaAlimento, comiOutra, estimar, registrarExtra, removeExtra,
+  abaDieta: k => { abaDieta = k; refAberta = null; vDieta(); }, mudaDia, agua: aguaClick, abreRef, marcaRef, subsAlimento, trocaAlimento, comiOutra, estimar, registrarExtra, removeExtra, voltarPlano,
   setTextoDieta: v => { textoDieta = v; }, gerarDieta, setDietaImp: (k, v) => { dietaImport[k] = v; }, salvarDietaImport, editarPlano, dp, dm, dr, di, dqn, dun, addItem, remItem, addRef, remRef, metasDosItens, salvarPlanoManual, excluirPlano,
   modo: m => { modoAuth = m; vAuth(); } };
 
