@@ -101,3 +101,11 @@ As sugestões enviadas pelo app (Ajustes → Ajuda → 💡 Sugerir melhoria) fi
    → **Implantar** → **Autorizar acesso** → escolha a conta. Se aparecer "O Google não verificou este app", clique em **Avançado → Acessar (não seguro)**: o app é o seu próprio script.
 5. Copie o **URL do app da Web** (termina em `/exec`) e cole em `SUGESTOES_URL` no `config.js` → publique o `config.js`.
 O e-mail chega com o texto, o tipo, a versão e o aparelho; **Responder** vai direto para o usuário. Limite: 50 e-mails por dia (configurável no script).
+
+## Treinos e página de vendas (v2.11)
+- **Aba Treinos** (substitui Fichas + Treinar): cada treino tem nome e agrupa as fichas A, B, C… Fichas antigas entram automaticamente no treino "Meu treino". Os treinos ficam em `users/{uid}/programas` (as regras atuais já cobrem, não precisa republicar).
+- **Página de vendas:** quem abre `hypertreino.com.br` sem estar logado vê a página de vendas; o botão "Testar 7 dias grátis" leva ao "Criar conta". Não aparece no app instalado nem depois de sair da conta.
+  - Link direto para o login (sem a página): `https://hypertreino.com.br/?login`
+  - Link direto para o cadastro: `https://hypertreino.com.br/?cadastro`
+  - Os links com UTM dos anúncios abrem a página de vendas e continuam gravando a origem.
+- Imagens da página: pasta `img/` (prints do app com dados de demonstração). Para trocar, substitua os arquivos mantendo os nomes.

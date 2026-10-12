@@ -136,6 +136,47 @@ document.querySelector('meta[name=theme-color]').setAttribute('content',l?'#f3f4
   details summary::-webkit-details-marker{display:none}
   details summary::after{content:'+';color:var(--mut)} details[open] summary::after{content:'–'}
   .calc{background:#c6f43214;border:1px solid #c6f43240;border-radius:12px;padding:10px 12px;font-size:13px;margin-top:10px;line-height:1.6}
+  /* ---- aba Treinos (programas) ---- */
+  .nextcard{background:linear-gradient(135deg,#c6f43226,#c6f4320a);border:1px solid #c6f43255;border-radius:18px;padding:14px;margin-bottom:12px}
+  .prog{border:1px solid var(--line);border-radius:18px;background:var(--card);margin-bottom:12px;overflow:hidden}
+  .prog.on{border-color:#c6f43266}
+  .ph{display:flex;align-items:center;gap:10px;padding:14px;cursor:pointer}
+  .ph .ic{width:40px;height:40px;border-radius:12px;background:#c6f43222;display:grid;place-items:center;font-size:18px;flex-shrink:0}
+  .ph b{font-size:16px} .chev{color:var(--mut);font-size:15px;width:16px;text-align:center}
+  .fl{padding:10px 14px;border-top:1px solid var(--line)}
+  .fl .tag{min-width:40px;height:40px;font-size:16px;cursor:pointer}
+  .fl .btn.sm{padding:9px 14px}
+  .chip.ok{background:#3ddc8422;color:var(--ok)}
+  #liveBar{position:absolute;left:10px;right:10px;bottom:calc(68px + var(--sb));display:none;align-items:center;gap:10px;background:var(--ac);color:var(--ac-tx);border-radius:14px;padding:11px 14px;font-size:14px;font-weight:700;z-index:4;cursor:pointer;box-shadow:0 6px 20px var(--sombra)}
+  #liveBar i{width:9px;height:9px;border-radius:50%;background:#e02424;flex-shrink:0;animation:pisca 1.4s infinite}
+  #liveBar .lv{margin-left:auto;background:#0002;border-radius:9px;padding:5px 10px;white-space:nowrap}
+  body.comlive main{padding-bottom:calc(170px + var(--sb))}
+  /* ---- página de vendas ---- */
+  body.landing header{display:none} body.landing main{padding:0 0 30px}
+  .ld{color:var(--tx)}
+  .ld .bar{display:flex;justify-content:space-between;align-items:center;padding:calc(14px + var(--st)) 18px 14px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:2}
+  .ld .bar b{font-size:17px;display:flex;align-items:center;gap:8px} .ld .bar img{width:28px;height:28px;border-radius:8px}
+  .ld .bar button{background:none;border:1px solid var(--line);color:var(--tx);border-radius:10px;padding:8px 14px;font-weight:700;cursor:pointer}
+  .ld .hero{padding:30px 20px 8px;text-align:center}
+  .ld h2{font-size:30px;line-height:1.12;letter-spacing:-.5px} .ld h2 em{font-style:normal;color:var(--act)}
+  .ld .hero p{color:var(--mut);font-size:15px;line-height:1.55;margin:12px 0 18px}
+  .ld .cta{display:block;width:100%;background:var(--ac);color:var(--ac-tx);border:0;border-radius:15px;padding:16px;font-size:16px;font-weight:800;cursor:pointer}
+  .ld .small{font-size:12.5px;color:var(--mut);margin-top:9px;text-align:center}
+  .ld .shots{display:flex;gap:10px;justify-content:center;padding:22px 12px 8px;overflow:hidden}
+  .ld .shots img{width:31%;max-width:150px;border-radius:16px;border:1px solid var(--line);box-shadow:0 10px 30px var(--sombra)}
+  .ld .shots img:nth-child(2){transform:translateY(-12px)}
+  .ld .sec{padding:18px 20px 4px} .ld .sec h3{font-size:20px;margin-bottom:6px}
+  .ld .ben{display:flex;gap:14px;padding:13px 0;border-bottom:1px solid var(--line)} .ld .ben:last-child{border-bottom:0}
+  .ld .ben .e{width:40px;height:40px;border-radius:12px;background:#c6f43222;display:grid;place-items:center;font-size:19px;flex-shrink:0}
+  .ld .ben b{font-size:15px;display:block;margin-bottom:3px} .ld .ben span{font-size:13.5px;color:var(--mut);line-height:1.5}
+  .ld .steps div{display:flex;gap:12px;align-items:center;font-size:14.5px;padding:7px 0}
+  .ld .steps em{font-style:normal;width:28px;height:28px;border-radius:50%;background:var(--ac);color:var(--ac-tx);display:grid;place-items:center;font-weight:800;font-size:13px;flex-shrink:0}
+  .ld .price{margin:18px 20px;border:1px solid #c6f43266;border-radius:20px;padding:20px;text-align:center;background:#c6f4320d}
+  .ld .price .v{font-size:38px;font-weight:800;margin:4px 0} .ld .price .v small{font-size:15px;color:var(--mut);font-weight:500}
+  .ld .price ul{list-style:none;text-align:left;font-size:14.5px;line-height:2;margin:10px 0 16px}
+  .ld details{margin:0 20px;border-top:1px solid var(--line);padding:13px 0} .ld details p{color:var(--mut);font-size:14px;line-height:1.55;margin-top:8px}
+  .ld .foot{padding:22px 20px 10px;font-size:12px;color:var(--mut);line-height:1.7;text-align:center}
+  .ld .foot a{color:var(--mut)}
   /* ---- treino passo a passo ---- */
   body.emtreino header, body.emtreino nav{display:none}
   body.emtreino main{padding:0 14px calc(150px + var(--sb))}
@@ -272,9 +313,9 @@ document.querySelector('meta[name=theme-color]').setAttribute('content',l?'#f3f4
   </div>
   <div id="tBar"><div id="tRest"><button onclick="A.addT(-10)">−10s</button><b id="tRt">00:00</b><button onclick="A.addT(10)">+10s</button><button class="skip" onclick="A.stopT()">Pular</button></div>
     <div class="tact"><button class="btn" id="tMain" onclick="A.acaoTreino()">Registrar série</button><button class="btn ghost more" onclick="A.menuTreino()" aria-label="Opções">⋮</button></div></div>
+  <div id="liveBar" onclick="A.go('treino')" role="button" aria-label="Voltar ao treino em andamento"><i></i><span id="liveTxt"></span><span class="lv">Voltar ›</span></div>
   <nav>
-    <button data-v="fichas" onclick="A.go('fichas')"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>Fichas</button>
-    <button data-v="treino" onclick="A.go('treino')"><span class="dot" id="navDot" style="display:none"></span><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 7v10M18 7v10M3 10v4M21 10v4M6 12h12"/></svg>Treinar</button>
+    <button data-v="fichas" onclick="A.go('fichas')"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 7v10M18 7v10M3 10v4M21 10v4M6 12h12"/></svg>Treinos</button>
     <button data-v="evolucao" onclick="A.go('evolucao')"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Cargas</button>
     <button data-v="medidas" onclick="A.go('medidas')"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 8h18v8H3z"/><path d="M7 8v3M11 8v4M15 8v3M19 8v4"/></svg>Medidas</button>
     <button data-v="dieta" onclick="A.go('dieta')"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M7 3v8a3 3 0 0 0 6 0V3M10 3v18M17 3c-1.7 0-3 2.2-3 5s1.3 4 3 4v9"/></svg>Dieta</button>

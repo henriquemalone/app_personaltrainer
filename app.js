@@ -1,7 +1,7 @@
 // ================================================================
 //  Treino v2 — PWA + Firebase (Auth, Firestore offline, AI Logic)
 // ================================================================
-export const VERSAO_APP = '2.10.0';
+export const VERSAO_APP = '2.11.0';
 const FB = 'https://www.gstatic.com/firebasejs/12.19.0/';
 
 import { firebaseConfig, RECAPTCHA_SITE_KEY, IA_PROVEDOR, MODELO_IA, YOUTUBE_API_KEY, ADMIN_EMAIL, LINK_ASSINATURA, PRECO_TXT, DIAS_TESTE, SUPORTE_WHATSAPP, SUPORTE_EMAIL, SUGESTOES_URL } from './config.js';
@@ -50,6 +50,7 @@ document.addEventListener('focusin', e => {
 const clone = o => JSON.parse(JSON.stringify(o));
 function toast(m, ms = 2800) { const t = $('toast'); t.textContent = m; t.style.display = 'block'; clearTimeout(t._h); t._h = setTimeout(() => t.style.display = 'none', ms); }
 const standalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const QS0 = location.search; // parâmetros da URL de entrada (antes de serem limpos)
 const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const DEV = uid(); // id deste aparelho/aba, para ignorar o "eco" das próprias gravações
 
@@ -70,7 +71,7 @@ if (configurado) {
 
 // ================= Estado =================
 const cfgPadrao = () => ({ backupDias: 14, ultimoBackup: null, avisoVisto: null, migrado: false, tema: null });
-const S = { user: null, perfil: { cfg: cfgPadrao() }, fichas: [], sessoes: [], avaliacoes: [], plano: null, diario: [], acesso: null, ativo: null, pronto: { fichas: false, sessoes: false, perfil: false, ativo: false, avaliacoes: false, plano: false, diario: false, acesso: false } };
+const S = { user: null, perfil: { cfg: cfgPadrao() }, fichas: [], programas: [], sessoes: [], avaliacoes: [], plano: null, diario: [], acesso: null, ativo: null, srv: {}, pronto: { fichas: false, programas: false, sessoes: false, perfil: false, ativo: false, avaliacoes: false, plano: false, diario: false, acesso: false } };
 let unsubs = [];
 const uref = (...p) => doc(db, 'users', S.user.uid, ...p);
 const ucol = (...p) => collection(db, 'users', S.user.uid, ...p);
@@ -99,7 +100,11 @@ function escutar() {
   }, erroEscuta));
   unsubs.push(onSnapshot(ucol('fichas'), qs => {
     S.fichas = qs.docs.map(d => d.data()).sort((a, b) => String(a.letra).localeCompare(String(b.letra)));
-    S.pronto.fichas = true; aoMudar('fichas');
+    S.srv.fichas = !qs.metadata?.fromCache; S.pronto.fichas = true; migrarProgramas(); aoMudar('fichas');
+  }, erroEscuta));
+  unsubs.push(onSnapshot(ucol('programas'), qs => {
+    S.programas = qs.docs.map(d => d.data());
+    S.srv.programas = !qs.metadata?.fromCache; S.pronto.programas = true; migrarProgramas(); aoMudar('programas');
   }, erroEscuta));
   unsubs.push(onSnapshot(query(ucol('sessoes'), orderBy('inicio', 'desc'), limit(400)), qs => {
     S.sessoes = qs.docs.map(d => d.data()); S.pronto.sessoes = true; aoMudar('sessoes');
@@ -126,7 +131,7 @@ function aoMudar(o) {
   if (primeiraCarga) { primeiraCarga = false; if (S.ativo) { rota = 'treino'; pilha.push('treino'); history.pushState({ rota: 'treino', i: 1 }, ''); } render(); if (posLogin()) { checarAvisoValidade(); checarMigracao(); } return; }
   if (['editar', 'prompt', 'auth', 'revisar', 'avaliacao', 'dietaTexto', 'dietaRevisar', 'dietaEditar'].includes(rota)) return;
   if (rota === 'dieta' && (o === 'diario' || o === 'plano') && document.getElementById('modal').classList.contains('show')) return; // não atrapalhar quem está digitando
-  if (rota === 'treino' && S.ativo && o !== 'ativo') { $('navDot').style.display = 'block'; return; }
+  if (rota === 'treino' && S.ativo && o !== 'ativo') return;
   const y = $('view').scrollTop; render(); $('view').scrollTop = y;
 }
 
@@ -165,6 +170,7 @@ function erroIA(e) {
 const SCHEMA_SERIE = { type: 'object', properties: { reps: { type: 'string', description: 'Repetições, ex.: "10", "8-12", "falha"' }, kg: { type: 'number', description: 'Carga em kg; omitir se não informada' } }, required: ['reps'] };
 const SCHEMA_IMPORT = { type: 'object', required: ['fichas'], properties: {
   validadeSemanas: { type: 'integer', description: 'Duração do programa em semanas, se informada' },
+  nomeTreino: { type: 'string', description: 'Nome curto (até 40 caracteres) para o programa de treino como um todo, ex.: "Hipertrofia 8 semanas". Use o título do texto se houver.' },
   fichas: { type: 'array', items: { type: 'object', required: ['letra', 'nome', 'exercicios'], properties: {
     letra: { type: 'string' }, nome: { type: 'string' },
     exercicios: { type: 'array', items: { type: 'object', required: ['nome', 'series', 'descansoSegundos', 'juntoComAnterior', 'substitutos'], properties: {
@@ -256,7 +262,7 @@ function statusValidade(f) {
   if (d <= 7) return { cls: 'warn', txt: `Vence em ${d} dia${d === 1 ? '' : 's'}`, d };
   return { cls: '', txt: `Válida até ${fmtData(f.validade)}`, d };
 }
-const vencidas = () => S.fichas.filter(f => f.validade && diasAte(f.validade) <= 0);
+const vencidas = () => fichasAtuais().filter(f => f.validade && diasAte(f.validade) <= 0);
 function checarAvisoValidade() {
   const v = vencidas(); if (!v.length || S.perfil.cfg.avisoVisto === hoje()) return;
   S.perfil.cfg.avisoVisto = hoje(); salvarCfg();
@@ -312,12 +318,12 @@ window.addEventListener('popstate', e => {
 const empilharCamada = () => { pilha.push('#camada'); history.pushState({ rota, camada: true, i: pilha.length - 1 }, ''); };
 function render() {
   if (!configurado) return vNaoConfigurado();
-  if (!S.user) return vAuth();
-  document.body.classList.remove('noauth');
+  if (!S.user) return mostrarLanding() ? vLanding() : vAuth();
+  document.body.classList.remove('noauth', 'landing');
   const emT = rota === 'treino' && !!S.ativo; document.body.classList.toggle('emtreino', emT); $('tBar').style.display = emT ? 'block' : 'none';
   if (!emT && exAberto) fecharExercicio(); if (tEnd) tick();
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.v === rota || (['editar', 'prompt', 'revisar'].includes(rota) && b.dataset.v === 'fichas') || (rota === 'avaliacao' && b.dataset.v === 'medidas') || (rota.startsWith('dieta') && b.dataset.v === 'dieta')));
-  $('navDot').style.display = S.ativo ? 'block' : 'none';
+  barraAoVivo();
   $('hdrBtn').style.visibility = rota === 'ajustes' ? 'hidden' : 'visible';
   if (!statusAcesso().ok && !ROTAS_LIVRES.has(rota) && !(rota === 'treino' && S.ativo)) return vAssinar();
   ({ assinar: vAssinar, admin: vAdmin, fichas: vFichas, editar: vEditar, prompt: vPrompt, revisar: vRevisar, treino: vTreino, evolucao: vEvolucao, medidas: vMedidas, avaliacao: vAvaliacao, dieta: vDieta, dietaTexto: vDietaTexto, dietaRevisar: vDietaRevisar, dietaEditar: vDietaEditar, ajustes: vAjustes })[rota]();
@@ -347,8 +353,46 @@ const ORIGEM = (() => {
 const origemRecente = !!(ORIGEM && Date.now() - ORIGEM.em < 3 * 864e5);
 let jaLogou = false; // depois de sair da conta, volta para "Entrar"
 if (origemRecente) modoAuth = 'criar';
+// ================= Página de vendas =================
+// Aparece para quem abre o site sem estar logado. Não aparece no app instalado, depois de sair da conta, nem com ?login / ?cadastro na URL.
+let landingVista = false;
+const mostrarLanding = () => !landingVista && !jaLogou && !standalone() && !/[?&](login|cadastro)(=|&|$)/.test(QS0);
+function vLanding() {
+  document.body.classList.add('noauth', 'landing'); rota = 'landing'; $('hdrBtn').style.visibility = 'hidden';
+  const faq = [
+    ['Preciso ter personal ou nutricionista?', 'Não. Você pode montar seus treinos e sua dieta no app. Se já tem um profissional, é só colar o que ele mandou: o app organiza tudo. O Hyper Fit não substitui o acompanhamento profissional.'],
+    ['Funciona no iPhone e no Android?', 'Sim. O Hyper Fit funciona pelo navegador e pode ser instalado na tela inicial, como um app, nos dois sistemas. Seus dados ficam na nuvem e aparecem em qualquer aparelho em que você entrar.'],
+    ['Preciso colocar cartão para testar?', `Não. São ${DIAS_TESTE} dias grátis, sem cartão. Depois, se quiser continuar, a assinatura é ${PRECO_TXT}.`],
+    ['Como cancelo?', 'Quando quiser, direto no Mercado Pago, sem multa. Você continua com acesso até o fim do período pago.'],
+    ['Meus dados ficam seguros?', 'Seus dados ficam na sua conta, protegidos, e só você tem acesso. Não vendemos dados e você pode exportar ou excluir tudo pelo próprio app.']];
+  $('view').innerHTML = `<div class="ld">
+    <div class="bar"><b><img src="icon-192.png" alt="">Hyper Fit</b><button onclick="A.irLogin('entrar')">Entrar</button></div>
+    <div class="hero"><h2>Seu treino, sua dieta e sua evolução <em>em um só app</em></h2>
+      <p>Cole o treino do seu personal e o plano da sua nutri: o app monta tudo sozinho. Na academia, é só seguir passo a passo.</p>
+      <button class="cta" onclick="A.irLogin('criar')">Testar ${DIAS_TESTE} dias grátis</button>
+      <div class="small">Sem cartão · depois ${esc(PRECO_TXT)} · cancele quando quiser</div></div>
+    <div class="shots"><img src="img/landing-treino.webp" alt="Tela do treino guiado" loading="lazy"><img src="img/landing-cargas.webp" alt="Gráfico de evolução de cargas" loading="lazy"><img src="img/landing-dieta.webp" alt="Tela da dieta do dia" loading="lazy"></div>
+    <div class="sec">
+      ${[['✨', 'Cadastro por texto com IA', 'Cole o treino ou a dieta do jeito que veio. Em segundos vira ficha com séries, cargas e descanso.'],
+        ['▶️', 'Treino guiado na academia', 'Um exercício por vez, vídeo de execução, cronômetro de descanso e a carga que você usou da última vez.'],
+        ['📈', 'Veja sua evolução', 'Gráficos de carga por exercício e das suas medidas ao longo do tempo.'],
+        ['🍽️', 'Dieta no dia a dia', 'Marque o que comeu, troque alimentos pelas substituições do plano e acompanhe a água.'],
+        ['📱', 'Funciona como app', 'Instala na tela inicial do Android e do iPhone e funciona até sem internet na academia.']]
+        .map(([e, t, d]) => `<div class="ben"><div class="e">${e}</div><div><b>${t}</b><span>${d}</span></div></div>`).join('')}</div>
+    <div class="sec"><h3>Como funciona</h3><div class="steps"><div><em>1</em>Crie sua conta em 30 segundos</div><div><em>2</em>Cole seu treino e sua dieta</div><div><em>3</em>Treine. O app registra tudo</div></div></div>
+    <div class="price"><span class="chip ok">Preço de fundador</span><div class="v">${esc(PRECO_TXT.replace('/mês', ''))}<small>/mês</small></div>
+      <ul><li>✓ ${DIAS_TESTE} dias grátis, sem cartão</li><li>✓ Treinos, cargas, medidas e dieta</li><li>✓ IA para cadastrar treino e dieta</li><li>✓ Cancele quando quiser</li></ul>
+      <button class="cta" onclick="A.irLogin('criar')">Começar meu teste grátis</button></div>
+    <div class="sec" style="padding-bottom:8px"><h3>Perguntas frequentes</h3></div>
+    ${faq.map(([q, r]) => `<details><summary>${q}</summary><p>${r}</p></details>`).join('')}
+    <div class="foot">O Hyper Fit organiza treinos e dietas e não substitui profissionais de educação física, nutrição ou saúde.<br>
+      <a href="termos.html" target="_blank">Termos de uso</a> · <a href="privacidade.html" target="_blank">Privacidade</a>${linkWhats('Olá! Tenho uma dúvida sobre o Hyper Fit.') ? ` · <a href="${esc(linkWhats('Olá! Tenho uma dúvida sobre o Hyper Fit.'))}" target="_blank" rel="noopener">Suporte</a>` : ''}</div></div>`;
+  $('view').scrollTop = 0;
+}
+function irLogin(m) { landingVista = true; modoAuth = m; document.body.classList.remove('landing'); vAuth(); $('view').scrollTop = 0; }
+function voltarLanding() { landingVista = false; vLanding(); }
 function vAuth() {
-  document.body.classList.add('noauth'); rota = 'auth';
+  document.body.classList.add('noauth'); document.body.classList.remove('landing'); rota = 'auth';
   $('hdrBtn').style.visibility = 'hidden';
   setHdr('', modoAuth === 'criar' ? 'Criar conta' : modoAuth === 'senha' ? 'Recuperar senha' : 'Entrar');
   $('view').innerHTML = `<div class="auth">
@@ -362,6 +406,7 @@ function vAuth() {
         <div class="mut" style="font-size:12px;margin-top:8px">🎁 ${DIAS_TESTE} dias grátis, sem cartão. Depois, ${esc(PRECO_TXT)}.</div>` : ''}
       <button class="btn" id="aBtn" style="margin-top:18px">${modoAuth === 'criar' ? 'Criar conta' : modoAuth === 'senha' ? 'Enviar e-mail de recuperação' : 'Entrar'}</button>
     </form>
+    ${!jaLogou && !standalone() ? `<div style="text-align:center;margin-top:8px"><button class="link" onclick="A.voltarLanding()">← Conhecer o Hyper Fit</button></div>` : ''}
     <div style="margin-top:14px;text-align:center">
       ${modoAuth === 'entrar' ? `<button class="link ac" onclick="A.modo('criar')">Criar conta</button> · <button class="link" onclick="A.modo('senha')">Esqueci a senha</button>`
         : `<button class="link ac" onclick="A.modo('entrar')">Já tenho conta — entrar</button>`}
@@ -406,7 +451,7 @@ function bannersGerais() {
   if (venc.length) h += `<div class="banner bad"><b>⏰ Hora de trocar o treino</b>${venc.map(f => `Ficha ${esc(f.letra)} (${esc(f.nome)}) – ${statusValidade(f).txt.toLowerCase()}`).join('<br>')}</div>`;
   const sp = S.plano?.validade ? statusValidade(S.plano) : null;
   if (sp?.cls) h += `<div class="banner ${sp.cls}"><b>🍽 Plano alimentar</b>${sp.txt}. <button class="btn sm" style="margin-top:8px;display:block" onclick="A.go('dieta')">Abrir dieta</button></div>`;
-  const prox = S.fichas.filter(f => statusValidade(f)?.cls === 'warn');
+  const prox = fichasAtuais().filter(f => statusValidade(f)?.cls === 'warn');
   if (prox.length) h += `<div class="banner warn"><b>Validade chegando</b>${prox.map(f => `Ficha ${esc(f.letra)} – ${statusValidade(f).txt.toLowerCase()}`).join('<br>')}</div>`;
   const bd = S.perfil.cfg.backupDias;
   if (bd > 0 && S.sessoes.length >= 5) { const ult = S.perfil.cfg.ultimoBackup; const d = ult ? Math.floor((Date.now() - ult) / 864e5) : null;
@@ -414,30 +459,158 @@ function bannersGerais() {
   if (!standalone()) h += `<div class="banner info"><div class="row"><div><b>📲 Instale o app</b>Ícone na tela inicial e tela cheia.</div><button class="btn sm" onclick="A.guiaInstalacao()">Como instalar</button></div></div>`;
   return h;
 }
+// ================= Treinos (programas) =================
+// programa: users/{uid}/programas/{id} = {id, nome, criadoEm}. Cada ficha (A, B, C…) tem ficha.prog = id do programa.
+const PROG_PADRAO = 'meu-treino';
+const ordLetra = (a, b) => String(a.letra).localeCompare(String(b.letra));
+const progIds = () => new Set(S.programas.map(p => p.id));
+const fichasDo = pid => S.fichas.filter(f => f.prog === pid || (pid === PROG_PADRAO && !progIds().has(f.prog))).sort(ordLetra);
+function listaProgramas() { // inclui o "Meu treino" virtual enquanto houver fichas sem treino
+  const ps = [...S.programas];
+  if (!ps.some(p => p.id === PROG_PADRAO) && S.fichas.some(f => !progIds().has(f.prog))) ps.push({ id: PROG_PADRAO, nome: 'Meu treino', criadoEm: 0 });
+  const at = progAtualId();
+  return ps.sort((a, b) => (b.id === at) - (a.id === at) || (b.criadoEm || 0) - (a.criadoEm || 0));
+}
+function progAtualId() {
+  const c = S.perfil.cfg.progAtual, ps = S.programas;
+  if (c && (ps.some(p => p.id === c) || (c === PROG_PADRAO && fichasDo(PROG_PADRAO).length))) return c;
+  const ult = S.sessoes.find(x => S.fichas.some(f => f.id === x.fichaId)); if (ult) return S.fichas.find(f => f.id === ult.fichaId).prog || PROG_PADRAO;
+  const r = [...ps].sort((a, b) => (b.criadoEm || 0) - (a.criadoEm || 0))[0]; return r ? r.id : (S.fichas.length ? PROG_PADRAO : null);
+}
+const fichasAtuais = () => { const p = progAtualId(); return p ? fichasDo(p) : S.fichas; };
+const nomeProg = pid => S.programas.find(p => p.id === pid)?.nome || 'Meu treino';
+let progMigrado = false;
+function migrarProgramas() { // fichas antigas (sem treino) entram no treino "Meu treino"
+  if (progMigrado || !S.pronto.fichas || !S.pronto.programas || !S.srv.fichas || !S.srv.programas) return;
+  progMigrado = true;
+  const orfas = S.fichas.filter(f => !progIds().has(f.prog)); if (!orfas.length) return;
+  const b = writeBatch(db);
+  if (!progIds().has(PROG_PADRAO)) { const p = { id: PROG_PADRAO, nome: 'Meu treino', criadoEm: Date.now() }; S.programas.push(p); b.set(uref('programas', p.id), p); }
+  orfas.forEach(f => { f.prog = PROG_PADRAO; b.set(uref('fichas', f.id), { ...clone(f), atualizadoEm: Date.now() }); });
+  b.commit().catch(falhou);
+}
+function garantirPrograma(pid) { if (!progIds().has(pid)) { const p = { id: pid, nome: pid === PROG_PADRAO ? 'Meu treino' : 'Treino', criadoEm: Date.now() }; S.programas.push(p); setDoc(uref('programas', p.id), p).catch(falhou); } }
+function criarPrograma(nome) {
+  const p = { id: uid(), nome: String(nome || '').trim().slice(0, 60) || 'Meu treino', criadoEm: Date.now() };
+  S.programas.push(p); setDoc(uref('programas', p.id), p).catch(falhou);
+  S.perfil.cfg.progAtual = p.id; salvarCfg(); progAbertos.add(p.id); return p;
+}
+const quando = t => { const d = Math.floor((new Date(hoje() + 'T00:00') - new Date(ymd(new Date(t)) + 'T00:00')) / 864e5); return d <= 0 ? 'hoje' : d === 1 ? 'ontem' : `há ${d} dias`; };
+function proximaDaSequencia() {
+  const fs = fichasAtuais().filter(f => f.itens.length); if (!fs.length) return null;
+  const ult = S.sessoes.find(x => fs.some(f => f.id === x.fichaId));
+  if (!ult) return { f: fs[0], ult: null };
+  const k = fs.findIndex(f => f.id === ult.fichaId); return { f: fs[(k + 1) % fs.length], ult };
+}
+let progAbertos = new Set(), progIniciado = false, fichaAberta = new Set();
 function vFichas() {
-  setHdr(`Olá${S.user.displayName ? ', ' + S.user.displayName.split(' ')[0] : ''} · ${new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'short' })}`, 'Minhas fichas');
+  const ps = listaProgramas(), at = progAtualId();
+  if (!progIniciado && at) { progAbertos.add(at); progIniciado = true; }
+  setHdr(`${ps.length} treino${ps.length === 1 ? '' : 's'} · ${S.fichas.length} ficha${S.fichas.length === 1 ? '' : 's'}`, 'Treinos');
   let h = bannerAcesso() + bannersGerais(); const liberado = statusAcesso().ok;
-  if (S.ativo) h += `<div class="banner info"><b>Treino ${esc(S.ativo.letra)} em andamento</b><button class="btn sm" style="margin-top:8px" onclick="A.go('treino')">Continuar</button></div>`;
-  if (!S.fichas.length) h += `<div class="empty"><b>Nenhuma ficha ainda</b>Cole seu treino em texto e o app monta tudo, ou crie manualmente.</div>`;
-  h += S.fichas.map(f => {
-    const st = statusValidade(f); const ult = S.sessoes.find(s => s.fichaId === f.id); const nbi = grupos(f.itens).filter(g => g.length > 1).length;
-    return `<div class="card">
-      <div class="row"><div class="row left" style="gap:12px;min-width:0"><span class="tag">${esc(f.letra)}</span>
-        <div style="min-width:0"><b>${esc(f.nome)}</b><div class="mut">${f.itens.length} exercício${f.itens.length === 1 ? '' : 's'}${ult ? ' · último ' + fmtDH(ult.inicio) : ''}</div></div></div>
-        <button class="icon-btn" aria-label="Editar" onclick="A.editar('${f.id}')"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button></div>
-      <div class="btns" style="margin-top:10px">${st ? `<span class="chip ${st.cls}">${st.txt}</span>` : ''}${nbi ? `<span class="chip bi">${nbi} bi-set${nbi > 1 ? 's' : ''}</span>` : ''}</div>
-      <div class="mut exlist" style="margin:12px 0">${f.itens.map((e, i) => (e.bi ? ' + ' : (i ? ' · ' : '')) + `<button class="exlink" onclick="A.verExercicio('${f.id}','${e.id}')">${esc(e.nome)}</button>`).join('') || 'Sem exercícios'}</div>
-      ${liberado ? `<button class="btn" ${f.itens.length ? '' : 'disabled'} onclick="A.iniciar('${f.id}')">Iniciar treino ${esc(f.letra)}</button>` : `<button class="btn ghost" onclick="A.go('assinar')">🔒 Assinar para treinar</button>`}
-    </div>`; }).join('');
-  h += `<div class="btns"><button class="btn" style="flex:1" onclick="A.go('prompt')">✨ Cadastrar por texto</button><button class="btn ghost" style="flex:1" onclick="A.editar(null)">+ Ficha manual</button></div>`;
+  h += `<div class="btns" style="margin-bottom:12px"><button class="btn" style="flex:1" onclick="A.go('prompt')">✨ Cadastrar por texto</button><button class="btn ghost" style="flex:1" onclick="A.novoTreinoManual()">+ Treino manual</button></div>`;
+  if (!S.fichas.length) { $('view').innerHTML = h + `<div class="empty"><b>Nenhum treino ainda</b>Cole o treino do seu personal em texto e o app monta as fichas A, B, C…, ou crie manualmente.</div>`; return; }
+  const nx = !S.ativo && liberado ? proximaDaSequencia() : null;
+  if (nx) h += `<div class="nextcard"><div class="row"><div style="min-width:0"><div class="mut" style="font-size:12px">Próximo da sequência</div><b style="font-size:16px">${esc(nx.f.letra)} · ${esc(nx.f.nome)}</b>
+      <div class="mut" style="font-size:12px">${nx.ult ? `último: ${esc(nx.ult.letra)}, ${quando(nx.ult.inicio)}` : esc(nomeProg(nx.f.prog))}</div></div><button class="btn sm" onclick="A.iniciar('${nx.f.id}')">▶ Iniciar</button></div></div>`;
+  h += ps.map(p => {
+    const fs = fichasDo(p.id), aberto = progAbertos.has(p.id), atual = p.id === at;
+    const vs = fs.map(f => f.validade).filter(Boolean).sort(), st = vs.length ? statusValidade({ validade: vs[0] }) : null;
+    return `<div class="prog${atual ? ' on' : ''}"><div class="ph" onclick="A.toggleProg('${p.id}')"><div class="ic">${atual ? '🏋️' : '📁'}</div>
+      <div style="flex:1;min-width:0"><b>${esc(p.nome)}</b><div class="mut" style="font-size:12px">${fs.length} ficha${fs.length === 1 ? '' : 's'}${vs.length ? ' · até ' + fmtData(vs[0]).replace(/ de /g, ' ') : ''}
+        ${atual ? ' <span class="chip ok">atual</span>' : ''}${st?.cls ? ` <span class="chip ${st.cls}">${st.cls === 'bad' ? 'vencido' : 'vence logo'}</span>` : ''}</div></div>
+      <button class="mini" onclick="event.stopPropagation();A.menuProg('${p.id}')" aria-label="Opções do treino">⋮</button><span class="chev">${aberto ? '▾' : '▸'}</span></div>
+      ${aberto ? fs.map(f => { const ult = S.sessoes.find(x => x.fichaId === f.id), ab = fichaAberta.has(f.id); const nbi = grupos(f.itens).filter(g => g.length > 1).length;
+        return `<div class="fl"><div class="row" style="gap:10px"><span class="tag" onclick="A.toggleFicha('${f.id}')">${esc(f.letra)}</span>
+          <div style="flex:1;min-width:0;cursor:pointer" onclick="A.toggleFicha('${f.id}')"><b style="font-size:15px">${esc(f.nome)}</b><div class="mut" style="font-size:12px">${f.itens.length} exercício${f.itens.length === 1 ? '' : 's'}${nbi ? ` · ${nbi} bi-set${nbi > 1 ? 's' : ''}` : ''}${ult ? ' · último ' + fmtDH(ult.inicio) : ''}</div></div>
+          ${liberado ? `<button class="btn sm" ${f.itens.length ? '' : 'disabled'} onclick="A.iniciar('${f.id}')" aria-label="Iniciar treino ${esc(f.letra)}">▶</button>` : `<button class="btn sm ghost" onclick="A.go('assinar')">🔒</button>`}
+          <button class="mini" onclick="A.menuFicha('${f.id}')" aria-label="Opções da ficha">⋮</button></div>
+          ${ab ? `<div class="mut exlist" style="margin:10px 0 2px">${f.itens.map((e, i) => (e.bi ? ' + ' : (i ? ' · ' : '')) + `<button class="exlink" onclick="A.verExercicio('${f.id}','${e.id}')">${esc(e.nome)}</button>`).join('') || 'Sem exercícios'}</div>` : ''}</div>`; }).join('')
+        + (fs.length ? '' : `<div class="fl mut">Nenhuma ficha. Use ⋮ → Adicionar ficha.</div>`) : ''}</div>`; }).join('');
   $('view').innerHTML = h;
 }
-function proximaLetra(usadas) { const us = new Set(usadas || S.fichas.map(f => f.letra)); for (const c of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') if (!us.has(c)) return c; return '?'; }
+function toggleProg(id) { progAbertos.has(id) ? progAbertos.delete(id) : progAbertos.add(id); keepScroll(vFichas); }
+function toggleFicha(id) { fichaAberta.has(id) ? fichaAberta.delete(id) : fichaAberta.add(id); keepScroll(vFichas); }
+function menuProg(id) {
+  const fs = fichasDo(id), nome = id === PROG_PADRAO && !progIds().has(id) ? 'Meu treino' : nomeProg(id);
+  openModal(`<h2>${esc(nome)}</h2>
+    <div class="mi" onclick="A.renomearProg('${id}')"><span>✏️</span>Renomear treino</div>
+    <div class="mi" onclick="A.closeModal();A.editar(null,'${id}')"><span>＋</span>Adicionar ficha (${esc(proximaLetra(fs.map(f => f.letra)))})</div>
+    <div class="mi" onclick="A.validadeProg('${id}')"><span>📅</span>Alterar validade</div>
+    ${id !== progAtualId() ? `<div class="mi" onclick="A.atualProg('${id}')"><span>⭐</span>Marcar como treino atual</div>` : ''}
+    <div class="mi bad" onclick="A.excluirProg('${id}')"><span>🗑</span>Excluir treino inteiro${fs.length ? ` (${fs.map(f => esc(f.letra)).join(', ')})` : ''}</div>
+    <button class="btn ghost" style="margin-top:14px" onclick="A.closeModal()">Cancelar</button>`);
+}
+function renomearProg(id) {
+  openModal(`<h2>Renomear treino</h2><input class="in" id="progNome" maxlength="60" value="${esc(nomeProg(id))}">
+    <button class="btn" style="margin-top:12px" onclick="A.salvarNomeProg('${id}')">Salvar</button><button class="btn ghost" style="margin-top:8px" onclick="A.closeModal()">Cancelar</button>`);
+  setTimeout(() => $('progNome')?.select(), 50);
+}
+function salvarNomeProg(id) {
+  const nome = ($('progNome')?.value || '').trim().slice(0, 60); if (!nome) return toast('Dê um nome para o treino');
+  garantirPrograma(id); const p = S.programas.find(x => x.id === id); p.nome = nome; setDoc(uref('programas', id), clone(p)).catch(falhou);
+  closeModal(); keepScroll(vFichas); toast('Treino renomeado');
+}
+function validadeProg(id) {
+  const vs = fichasDo(id).map(f => f.validade).filter(Boolean).sort();
+  openModal(`<h2>Validade do treino</h2><div class="mut" style="margin-bottom:10px">Vale para todas as fichas deste treino.</div>
+    <input type="date" class="in" id="progVal" value="${esc(vs[0] || '')}">
+    <div class="btns" style="margin-top:8px">${[4, 6, 8, 12].map(n => `<button class="btn sm ghost" onclick="document.getElementById('progVal').value='${somaDias(n * 7)}'">+${n} sem</button>`).join('')}<button class="btn sm ghost" onclick="document.getElementById('progVal').value=''">Sem prazo</button></div>
+    <button class="btn" style="margin-top:14px" onclick="A.salvarValidadeProg('${id}')">Salvar</button><button class="btn ghost" style="margin-top:8px" onclick="A.closeModal()">Cancelar</button>`);
+}
+function salvarValidadeProg(id) {
+  const v = $('progVal')?.value || ''; const b = writeBatch(db);
+  fichasDo(id).forEach(f => { f.validade = v; f.prog = id; b.set(uref('fichas', f.id), { ...clone(f), atualizadoEm: Date.now() }); });
+  b.commit().catch(falhou); S.perfil.cfg.avisoVisto = null; salvarCfg(); closeModal(); keepScroll(vFichas); toast('Validade atualizada');
+}
+function atualProg(id) { garantirPrograma(id); S.perfil.cfg.progAtual = id; salvarCfg(); progAbertos.add(id); closeModal(); keepScroll(vFichas); toast('Treino atual alterado'); }
+function excluirProg(id) {
+  const fs = fichasDo(id);
+  if (!confirm(`Excluir o treino "${nomeProg(id)}"${fs.length ? ` e as fichas ${fs.map(f => f.letra).join(', ')}` : ''}? O histórico de cargas dos treinos já feitos é mantido.`)) return;
+  const b = writeBatch(db); fs.forEach(f => b.delete(uref('fichas', f.id))); b.delete(uref('programas', id)); b.commit().catch(falhou);
+  const ids = new Set(fs.map(f => f.id)); S.fichas = S.fichas.filter(f => !ids.has(f.id)); S.programas = S.programas.filter(p => p.id !== id);
+  if (S.perfil.cfg.progAtual === id) { S.perfil.cfg.progAtual = null; salvarCfg(); }
+  closeModal(); keepScroll(vFichas); toast('Treino excluído');
+}
+function menuFicha(id) {
+  const f = S.fichas.find(x => x.id === id); if (!f) return;
+  openModal(`<h2>Ficha ${esc(f.letra)} · ${esc(f.nome)}</h2>
+    <div class="mi" onclick="A.closeModal();A.editar('${id}')"><span>✏️</span>Editar ficha</div>
+    <div class="mi" onclick="A.duplicarFicha('${id}')"><span>⧉</span>Duplicar ficha</div>
+    <div class="mi bad" onclick="A.closeModal();A.excluirFicha('${id}')"><span>🗑</span>Excluir só esta ficha</div>
+    <button class="btn ghost" style="margin-top:14px" onclick="A.closeModal()">Cancelar</button>`);
+}
+function duplicarFicha(id) {
+  const f = S.fichas.find(x => x.id === id); if (!f) return; const pid = f.prog || PROG_PADRAO;
+  const n = { ...clone(f), id: uid(), letra: proximaLetra(fichasDo(pid).map(x => x.letra)), nome: f.nome + ' (cópia)', criadoEm: Date.now(), prog: pid };
+  n.itens.forEach(e => e.id = uid()); S.fichas.push(n); salvarFicha_(n); closeModal(); keepScroll(vFichas); toast(`Ficha ${n.letra} criada`);
+}
+function novoTreinoManual() {
+  openModal(`<h2>Novo treino</h2><div class="mut" style="margin-bottom:10px">Dê um nome ao treino. Depois você cria as fichas A, B, C… dentro dele.</div>
+    <input class="in" id="progNome" maxlength="60" placeholder="Ex.: Hipertrofia – ${new Date().toLocaleDateString('pt-BR', { month: 'long' })}">
+    <button class="btn" style="margin-top:12px" onclick="A.criarTreinoManual()">Criar e montar a ficha A</button><button class="btn ghost" style="margin-top:8px" onclick="A.closeModal()">Cancelar</button>`);
+  setTimeout(() => $('progNome')?.focus(), 50);
+}
+function criarTreinoManual() {
+  const nome = ($('progNome')?.value || '').trim(); if (!nome) return toast('Dê um nome para o treino');
+  const p = criarPrograma(nome); closeModal(); editar(null, p.id);
+}
+// faixa "Treino em andamento" acima do menu, em qualquer aba
+function barraAoVivo() {
+  const el = $('liveBar'); if (!el) return;
+  const on = !!(S.user && S.ativo && rota !== 'treino' && !document.body.classList.contains('noauth'));
+  el.style.display = on ? 'flex' : 'none'; document.body.classList.toggle('comlive', on);
+  if (on) $('liveTxt').textContent = `Treino ${S.ativo.letra} em andamento · ${fmtDur(Math.floor((Date.now() - S.ativo.inicio) / 1000))}`;
+}
+setInterval(barraAoVivo, 1000);
+function proximaLetra(usadas) { const us = new Set(usadas || fichasAtuais().map(f => f.letra)); for (const c of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') if (!us.has(c)) return c; return '?'; }
 
 // ---------- Editor manual ----------
-function editar(id) {
+function editar(id, prog) {
   const f = id ? S.fichas.find(x => x.id === id) : null;
-  draft = f ? clone(f) : { id: null, letra: proximaLetra(), nome: '', validade: '', itens: [] };
+  const pid = prog || progAtualId() || PROG_PADRAO, irmas = fichasDo(pid);
+  draft = f ? clone(f) : { id: null, prog: pid, letra: proximaLetra(irmas.map(x => x.letra)), nome: '', validade: irmas.map(x => x.validade).filter(Boolean).sort()[0] || '', itens: [] };
+  if (f) draft.prog = f.prog && progIds().has(f.prog) ? f.prog : PROG_PADRAO;
   if (!draft.itens.length) draft.itens.push(novoItem());
   go('editar');
 }
@@ -452,6 +625,7 @@ function vEditar() {
       <div><label class="f" style="margin-top:0">Letra</label><input class="in" maxlength="3" value="${esc(draft.letra)}" oninput="A.df('letra',this.value.toUpperCase())"></div>
       <div><label class="f" style="margin-top:0">Nome</label><input class="in" placeholder="Ex.: Peito e Tríceps" value="${esc(draft.nome)}" oninput="A.df('nome',this.value)"></div>
     </div>
+    ${listaProgramas().length > 1 ? `<label class="f">Treino</label><select class="in" style="max-width:100%" onchange="A.df('prog',this.value)">${listaProgramas().map(p => `<option value="${p.id}" ${p.id === draft.prog ? 'selected' : ''}>${esc(p.nome)}</option>`).join('')}</select>` : ''}
     <label class="f">Prazo de validade (opcional)</label>
     <input type="date" class="in" value="${esc(draft.validade)}" onchange="A.df('validade',this.value,1)">
     <div class="btns" style="margin-top:8px">
@@ -487,6 +661,7 @@ function vEditar() {
     <button class="btn ghost" style="margin-top:14px" onclick="A.addEx()">+ Exercício</button>
   </div>
   <button class="btn" onclick="A.salvarFicha()">Salvar ficha</button>
+  ${draft.id ? '' : `<button class="btn ghost" style="margin-top:8px" onclick="A.salvarFicha(true)">Salvar e criar a ficha ${esc(proximaLetra([...fichasDo(draft.prog).map(x => x.letra), draft.letra]))}</button>`}
   <div class="btns" style="margin-top:10px">
     <button class="btn ghost" style="flex:1" onclick="A.cancelarEdicao()">Cancelar</button>
     ${draft.id ? `<button class="btn bad" style="flex:1" onclick="A.excluirFicha('${draft.id}')">Excluir ficha</button>` : ''}
@@ -508,8 +683,8 @@ function normalizarItem(e, i) {
     series: (e.series || []).map(s => ({ reps: String(s.reps ?? '').trim() || '10', kg: kgOuVazio(s.kg) })).slice(0, 20),
     subs: (e.subs || []).filter(x => typeof x === 'string' && x.trim()).slice(0, 3) };
 }
-function salvarFicha() {
-  draft.nome = draft.nome.trim(); draft.letra = (draft.letra || '').trim() || proximaLetra();
+function salvarFicha(eProxima) {
+  draft.nome = draft.nome.trim(); draft.letra = (draft.letra || '').trim() || proximaLetra(fichasDo(draft.prog).filter(x => x.id !== draft.id).map(x => x.letra));
   if (!draft.nome) return toast('Dê um nome para a ficha');
   const antigos = {}; (S.fichas.find(f => f.id === draft.id)?.itens || []).forEach(e => antigos[e.id] = e.nome);
   draft.itens = draft.itens.filter(e => e.nome.trim()).map((e, i) => { const n = normalizarItem(e, i); if (antigos[n.id] && antigos[n.id] !== n.nome) n.subs = []; return n; });
@@ -519,9 +694,14 @@ function salvarFicha() {
   const mudouValidade = !!draft.validade && antiga?.validade !== draft.validade;
   if (antiga && antiga.validade !== draft.validade) { S.perfil.cfg.avisoVisto = null; salvarCfg(); }
   if (!draft.id) draft.id = uid();
-  const f = { id: draft.id, letra: draft.letra, nome: draft.nome, validade: draft.validade || '', itens: draft.itens, criadoEm: antiga?.criadoEm || Date.now() };
+  const f = { id: draft.id, prog: draft.prog || PROG_PADRAO, letra: draft.letra, nome: draft.nome, validade: draft.validade || '', itens: draft.itens, criadoEm: antiga?.criadoEm || Date.now() };
+  garantirPrograma(f.prog); progAbertos.add(f.prog);
   const i = S.fichas.findIndex(x => x.id === f.id); if (i >= 0) S.fichas[i] = f; else S.fichas.push(f);
-  salvarFicha_(f); draft = null; go('fichas'); toast('Ficha salva');
+  salvarFicha_(f);
+  if (eProxima) { // "Salvar e criar a próxima ficha": continua no editor com a letra seguinte
+    const irmas = fichasDo(f.prog); draft = { id: null, prog: f.prog, letra: proximaLetra(irmas.map(x => x.letra)), nome: '', validade: f.validade, itens: [novoItem()] };
+    keepScroll(vEditar); $('view').scrollTop = 0; toast(`Ficha ${f.letra} salva. Agora a ficha ${draft.letra}.`);
+  } else { draft = null; go('fichas'); toast('Ficha salva'); }
   completarSubstitutos(f);
   if (mudouValidade && diasAte(f.validade) > 0) ofertarAgenda(f);
 }
@@ -536,7 +716,7 @@ function excluirFicha(id) {
 }
 
 // ---------- Cadastro por texto (IA) ----------
-let textoPrompt = '';
+let textoPrompt = '', nomeTreinoTxt = '';
 const EXEMPLO_PROMPT = `Treino A – Peito e tríceps (descanso 90s)
 Supino reto 4x10 com 60kg
 Supino inclinado halter 12/10/8 com 22, 24 e 26kg
@@ -552,7 +732,10 @@ Validade: 6 semanas`;
 function vPrompt() {
   setHdr('Cole o treino em texto livre', 'Cadastrar por texto');
   $('view').innerHTML = `<div class="card">
-    <div class="mut" style="margin-bottom:10px">Pode colar do WhatsApp, PDF do personal, anotação… A IA monta as fichas (com séries, cargas, descanso, bi-sets e 3 substituições por exercício). Você revisa antes de salvar.</div>
+    <label class="f" style="margin-top:0">Nome do treino</label>
+    <input class="in" id="pNome" maxlength="60" placeholder="Em branco = a IA sugere um nome" value="${esc(nomeTreinoTxt)}" oninput="A.setNomeTreino(this.value)">
+    <label class="f">Cole o treino (do personal, PDF, WhatsApp…)</label>
+    <div class="mut" style="margin-bottom:10px">A IA monta as fichas A, B, C… com séries, cargas, descanso, bi-sets e 3 substituições por exercício. Você revisa antes de salvar.</div>
     <textarea class="in" id="pTxt" placeholder="${esc(EXEMPLO_PROMPT)}" oninput="A.setPrompt(this.value)">${esc(textoPrompt)}</textarea>
     <div class="row" style="margin-top:6px"><button class="link" onclick="A.usarExemplo()">Usar exemplo</button><span class="mut" style="font-size:12px">Não inclua dados de saúde.</span></div>
     <button class="btn" id="pBtn" style="margin-top:10px" onclick="A.gerarDoPrompt()">✨ Gerar fichas</button>
@@ -560,6 +743,7 @@ function vPrompt() {
   <button class="btn ghost" onclick="A.go('fichas')">Voltar</button>`;
 }
 const setPrompt = v => textoPrompt = v;
+const setNomeTreino = v => nomeTreinoTxt = v;
 function usarExemplo() { textoPrompt = EXEMPLO_PROMPT; vPrompt(); }
 function normalizarImport(r) {
   const fichas = (r.fichas || []).map((f, k) => ({ id: null, letra: String(f.letra || '').trim().toUpperCase().slice(0, 3) || 'ABCDEFGH'[k] || '?', nome: String(f.nome || '').trim() || 'Treino',
@@ -567,7 +751,9 @@ function normalizarImport(r) {
       series: (e.series && e.series.length ? e.series : [{ reps: '10' }, { reps: '10' }, { reps: '10' }]).map(s => ({ reps: s.reps, kg: s.kg ?? '' })), subs: e.substitutos }, i)).filter(e => e.nome) }))
     .filter(f => f.itens.length);
   const sem = parseInt(r.validadeSemanas); const validade = sem > 0 && sem < 60 ? somaDias(sem * 7) : '';
-  return { fichas, validade, substituir: true };
+  const vistas = new Set(); fichas.forEach(f => { if (vistas.has(f.letra)) f.letra = proximaLetra([...vistas]); vistas.add(f.letra); }); // letras únicas dentro do treino
+  const nome = nomeTreinoTxt.trim() || String(r.nomeTreino || '').trim() || `Treino – ${new Date().toLocaleDateString('pt-BR', { month: 'long' })}`;
+  return { fichas, validade, nome: nome.slice(0, 60) };
 }
 async function gerarDoPrompt() {
   const t = textoPrompt.trim(); if (t.length < 10) return toast('Cole o treino no campo de texto');
@@ -580,32 +766,30 @@ async function gerarDoPrompt() {
   } catch (e) { console.error(e); toast(erroIA(e), 6000); b.disabled = false; b.textContent = '✨ Gerar fichas'; }
 }
 function vRevisar() {
-  const I = importado; const letras = new Set(S.fichas.map(f => f.letra)); const conflito = I.fichas.filter(f => letras.has(f.letra));
+  const I = importado;
   setHdr('Confira antes de salvar', `${I.fichas.length} ficha${I.fichas.length > 1 ? 's' : ''} encontrada${I.fichas.length > 1 ? 's' : ''}`);
   $('view').innerHTML = I.fichas.map(f => `<div class="card"><div class="row left" style="gap:12px"><span class="tag">${esc(f.letra)}</span><b>${esc(f.nome)}</b></div>
       <div style="margin-top:10px">${grupos(f.itens).map(g => `<div class="${g.length > 1 ? 'grp' : ''}" style="margin:10px 0">${g.length > 1 ? `<span class="chip bi">Bi-set</span>` : ''}
         ${g.map(i => { const e = f.itens[i]; return `<div style="margin-top:6px"><b style="font-size:15px">${esc(e.nome)}</b>
           <div class="mut">${resumoSeries(e.series)} · desc. ${e.descanso}s${e.obs ? ' · ' + esc(e.obs) : ''}</div>
           ${e.subs.length ? `<div class="mut" style="font-size:12px">Subst.: ${e.subs.map(esc).join(', ')}</div>` : ''}</div>`; }).join('')}</div>`).join('')}</div></div>`).join('') + `
-    <div class="card"><label class="f" style="margin-top:0">Validade das fichas</label>
+    <div class="card"><label class="f" style="margin-top:0">Nome do treino</label>
+      <input class="in" maxlength="60" value="${esc(I.nome)}" oninput="A.setImp('nome',this.value)">
+      <label class="f">Validade das fichas</label>
       <input type="date" class="in" value="${esc(I.validade)}" onchange="A.setImp('validade',this.value)">
-      ${conflito.length ? `<label class="row left" style="margin-top:14px;gap:10px;font-size:14px"><input type="checkbox" ${I.substituir ? 'checked' : ''} onchange="A.setImp('substituir',this.checked)" style="width:20px;height:20px">
-        Substituir as fichas atuais com a mesma letra (${conflito.map(f => f.letra).join(', ')})</label>` : ''}</div>
+      <div class="mut" style="font-size:12px;margin-top:8px">Vira o seu treino atual. ${S.fichas.length ? 'Os treinos anteriores continuam salvos (recolhidos) na aba Treinos.' : ''}</div></div>
     <button class="btn" onclick="A.salvarImportado()">Salvar fichas</button>
     <div class="mut" style="text-align:center;margin:10px 0">Depois de salvar, dá para ajustar qualquer detalhe em ✏️ Editar.</div>
     <button class="btn ghost" onclick="A.go('prompt')">Voltar e ajustar o texto</button>`;
 }
 const setImp = (k, v) => importado[k] = v;
 function salvarImportado() {
-  const I = importado; const b = writeBatch(db); const usadas = S.fichas.map(f => f.letra);
+  const I = importado; const b = writeBatch(db); const p = criarPrograma(I.nome);
   for (const f of I.fichas) {
-    const ex = S.fichas.find(x => x.letra === f.letra);
-    if (ex && I.substituir) { f.id = ex.id; f.criadoEm = ex.criadoEm || Date.now(); }
-    else { f.id = uid(); f.criadoEm = Date.now(); if (ex) f.letra = proximaLetra(usadas); }
-    usadas.push(f.letra); f.validade = I.validade || '';
-    b.set(uref('fichas', f.id), { ...clone(f), atualizadoEm: Date.now() });
+    f.id = uid(); f.criadoEm = Date.now(); f.prog = p.id; f.validade = I.validade || '';
+    S.fichas.push(f); b.set(uref('fichas', f.id), { ...clone(f), atualizadoEm: Date.now() });
   }
-  b.commit().catch(falhou);
+  b.commit().catch(falhou); nomeTreinoTxt = '';
   if (I.validade) { S.perfil.cfg.avisoVisto = null; salvarCfg(); }
   const n = I.fichas.length; importado = null; textoPrompt = ''; go('fichas'); toast(`${n} ficha${n > 1 ? 's' : ''} salva${n > 1 ? 's' : ''}`);
   I.fichas.forEach((f, k) => setTimeout(() => completarSubstitutos(f), 1500 + k * 1200)); // dicas, músculos e substituições faltantes
@@ -645,7 +829,8 @@ const thumbHTML = (vid, letra, cor) => `<div class="thumb">${vid ? `<img src="ht
 function vTreino() {
   const T = S.ativo;
   document.body.classList.toggle('emtreino', !!T);
-  if (!T) { $('tBar').style.display = 'none'; setHdr('Escolha uma ficha', 'Treinar');
+  if (!T) { $('tBar').style.display = 'none'; rota = 'fichas'; return vFichas();
+    setHdr('Escolha uma ficha', 'Treinar');
     $('view').innerHTML = S.fichas.length ? S.fichas.map(f => { const st = statusValidade(f); return `<div class="card"><div class="row"><div class="row left" style="gap:12px"><span class="tag">${esc(f.letra)}</span><div><b>${esc(f.nome)}</b><div class="mut">${f.itens.length} exercícios</div></div></div>
       <button class="btn sm" onclick="A.iniciar('${f.id}')">Iniciar</button></div>${st && st.cls ? `<div style="margin-top:10px"><span class="chip ${st.cls}">${st.txt}</span></div>` : ''}</div>`; }).join('')
       : `<div class="empty"><b>Nenhuma ficha</b>Crie uma ficha primeiro.</div><button class="btn" onclick="A.go('prompt')">✨ Cadastrar por texto</button>`;
@@ -792,7 +977,7 @@ function finalizar() {
   S.sessoes.unshift(sess); salvarSessao_(sess);
   S.ativo = null; stopT(); wake(false); salvarAtivo(true); document.body.classList.remove('emtreino'); go('evolucao'); toast('Treino salvo 💪');
 }
-function descartar(sem) { if (!sem && !confirm('Descartar este treino sem salvar?')) return; S.ativo = null; stopT(); wake(false); salvarAtivo(true); document.body.classList.remove('emtreino'); go('treino'); }
+function descartar(sem) { if (!sem && !confirm('Descartar este treino sem salvar?')) return; S.ativo = null; stopT(); wake(false); salvarAtivo(true); document.body.classList.remove('emtreino'); go('fichas'); }
 
 // ---------- Substituições ----------
 function abrirSubs(i) {
@@ -1073,7 +1258,7 @@ async function compartilharArquivo(file) {
 }
 async function exportar() {
   const nome = `treino-backup-${hoje().replace(/-/g, '')}.json`;
-  const dados = { formato: 'treino-v2', exportadoEm: new Date().toISOString(), fichas: S.fichas, sessoes: S.sessoes, avaliacoes: S.avaliacoes, perfilCorpo: corpo(), plano: S.plano, diario: S.diario };
+  const dados = { formato: 'treino-v2', exportadoEm: new Date().toISOString(), fichas: S.fichas, programas: S.programas, sessoes: S.sessoes, avaliacoes: S.avaliacoes, perfilCorpo: corpo(), plano: S.plano, diario: S.diario };
   if (await compartilharArquivo(new File([JSON.stringify(dados, null, 1)], nome, { type: 'application/json' }))) {
     S.perfil.cfg.ultimoBackup = Date.now(); salvarCfg(); toast('Backup gerado'); }
 }
@@ -1084,7 +1269,9 @@ async function importarDados(d, origem) {
   const fichas = (d.fichas || []).map(fichaV1paraV2).map(f => ({ ...f, id: f.id || uid(), itens: f.itens.map(normalizarItem) }));
   const sessoes = (d.sessoes || []).filter(s => s && s.inicio && Array.isArray(s.ex)).map(s => ({ ...s, id: s.id || uid() }));
   const avals = (d.avaliacoes || []).filter(a => a && /^\d{4}-\d{2}-\d{2}$/.test(a.data)).map(a => ({ ...a, id: a.id || uid() }));
-  await gravarEmLotes([...fichas.map(f => [uref('fichas', f.id), clone(f)]), ...sessoes.map(s => [uref('sessoes', s.id), clone(s)]), ...avals.map(a => [uref('avaliacoes', a.id), clone(a)])]);
+  const progs = (d.programas || []).filter(p => p && p.id && p.nome).map(p => ({ id: String(p.id), nome: String(p.nome).slice(0, 60), criadoEm: p.criadoEm || Date.now() }));
+  await gravarEmLotes([...progs.map(p => [uref('programas', p.id), p]), ...fichas.map(f => [uref('fichas', f.id), clone(f)]), ...sessoes.map(s => [uref('sessoes', s.id), clone(s)]), ...avals.map(a => [uref('avaliacoes', a.id), clone(a)])]);
+  progMigrado = false; setTimeout(migrarProgramas, 1500); // fichas sem treino entram em "Meu treino"
   const dias = (d.diario || []).filter(x => x && /^\d{4}-\d{2}-\d{2}$/.test(x.data));
   if (dias.length) await gravarEmLotes(dias.map(x => [uref('diario', x.data), clone(x)]));
   if (d.plano && !S.plano) await setDoc(uref('dieta', 'atual'), clone(d.plano));
@@ -1104,7 +1291,7 @@ function importarArquivo(inp) {
 async function apagarTudo() {
   if (!confirm('Apagar TODAS as fichas e o histórico da sua conta?')) return;
   if (!confirm('Tem certeza? Não dá para desfazer.')) return;
-  await gravarEmLotes([...S.fichas.map(f => [uref('fichas', f.id), null]), ...S.sessoes.map(s => [uref('sessoes', s.id), null]), ...S.avaliacoes.map(a => [uref('avaliacoes', a.id), null]), ...S.diario.map(x => [uref('diario', x.data), null]), [uref('dieta', 'atual'), null]]);
+  await gravarEmLotes([...S.programas.map(p => [uref('programas', p.id), null]), ...S.fichas.map(f => [uref('fichas', f.id), null]), ...S.sessoes.map(s => [uref('sessoes', s.id), null]), ...S.avaliacoes.map(a => [uref('avaliacoes', a.id), null]), ...S.diario.map(x => [uref('diario', x.data), null]), [uref('dieta', 'atual'), null]]);
   S.ativo = null; stopT(); salvarAtivo(true); go('fichas'); toast('Dados apagados');
 }
 // Dados da v1 (salvos só no aparelho) -> conta na nuvem
@@ -1741,7 +1928,7 @@ async function confirmarExclusao() {
   try {
     await reauthenticateWithCredential(auth.currentUser, EmailAuthProvider.credential(auth.currentUser.email, senha));
     unsubs.forEach(u => u()); unsubs = [];
-    await gravarEmLotes([...S.fichas.map(f => [uref('fichas', f.id), null]), ...S.sessoes.map(s => [uref('sessoes', s.id), null]), ...S.avaliacoes.map(a => [uref('avaliacoes', a.id), null]),
+    await gravarEmLotes([...S.programas.map(p => [uref('programas', p.id), null]), ...S.fichas.map(f => [uref('fichas', f.id), null]), ...S.sessoes.map(s => [uref('sessoes', s.id), null]), ...S.avaliacoes.map(a => [uref('avaliacoes', a.id), null]),
       ...S.diario.map(x => [uref('diario', x.data), null]), [uref('dieta', 'atual'), null], [uref('estado', 'ativo'), null], [uref(), null]]);
     await deleteUser(auth.currentUser); closeModal(); toast('Conta excluída', 4000);
   } catch (e) { toast(e.code === 'auth/invalid-credential' || e.code === 'auth/wrong-password' ? 'Senha incorreta' : 'Erro: ' + (e.code || e.message), 5000); b.disabled = false; b.textContent = 'Excluir tudo'; }
@@ -1796,7 +1983,7 @@ window.A = { go, editar, df, d, ds, toggleBi, moverEx, removerEx, addEx, addSeri
   abaDieta: k => { abaDieta = k; refAberta = null; vDieta(); }, mudaDia, agua: aguaClick, abreRef, marcaRef, subsAlimento, trocaAlimento, comiOutra, estimar, registrarExtra, removeExtra, voltarPlano,
   setTextoDieta: v => { textoDieta = v; }, gerarDieta, setDietaImp: (k, v) => { dietaImport[k] = v; }, salvarDietaImport, editarPlano, dp, dm, dr, di, dqn, dun, addItem, remItem, addRef, remRef, metasDosItens, salvarPlanoManual, excluirPlano,
   verExercicio, admLiberar, admUsar, admRecarregar: () => { adminLista = null; vAdmin(); }, aceitarTermos, guiaInstalacao: () => guiaInstalacao(false), instalarAgora, excluirConta, confirmarExclusao,
-  recuperarDoCadastro, trocarAtual, pularOuProximo, sugerir, enviarSugestao, sugTipo: setSugTipo,
+  recuperarDoCadastro, irLogin, voltarLanding, setNomeTreino, toggleProg, toggleFicha, menuProg, renomearProg, salvarNomeProg, validadeProg, salvarValidadeProg, atualProg, excluirProg, menuFicha, duplicarFicha, novoTreinoManual, criarTreinoManual, trocarAtual, pularOuProximo, sugerir, enviarSugestao, sugTipo: setSugTipo,
   setTema: t => { aplicarTema(t); S.perfil.cfg.tema = t; salvarCfg(); keepScroll(vAjustes); },
   modo: m => { const em = $('aEmail')?.value || ''; modoAuth = m; vAuth(); if (em && $('aEmail')) $('aEmail').value = em; } };
 
@@ -1806,7 +1993,8 @@ else onAuthStateChanged(auth, u => {
   S.user = u;
   if (!u) { unsubs.forEach(x => x()); unsubs = []; S.fichas = []; S.sessoes = []; S.avaliacoes = []; S.plano = null; S.diario = []; S.ativo = null; document.body.classList.remove('emtreino'); $('tBar').style.display = 'none'; pararTimerUI(); modoAuth = (!jaLogou && origemRecente) ? 'criar' : 'entrar'; render(); return; }
   document.body.classList.remove('noauth'); rota = 'fichas'; primeiraCarga = true; pilha = ['fichas']; history.replaceState({ rota: 'fichas', i: 0 }, '');
-  S.pronto = { fichas: false, sessoes: false, perfil: false, ativo: false, avaliacoes: false, plano: false, diario: false, acesso: false }; S.acesso = null; acessoRegistrado = false; adminLista = null;
+  S.programas = []; S.srv = {}; progMigrado = false;
+  S.pronto = { fichas: false, programas: false, sessoes: false, perfil: false, ativo: false, avaliacoes: false, plano: false, diario: false, acesso: false }; S.acesso = null; acessoRegistrado = false; adminLista = null;
   setHdr('', 'Hyper Fit'); $('view').innerHTML = '<div class="empty"><span class="spin"></span>Carregando seus treinos…</div>';
   escutar();
 });
