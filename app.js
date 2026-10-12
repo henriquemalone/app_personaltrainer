@@ -1,7 +1,7 @@
 // ================================================================
 //  Treino v2 — PWA + Firebase (Auth, Firestore offline, AI Logic)
 // ================================================================
-export const VERSAO_APP = '2.12.0';
+export const VERSAO_APP = '2.12.2';
 const FB = 'https://www.gstatic.com/firebasejs/12.19.0/';
 
 import { firebaseConfig, RECAPTCHA_SITE_KEY, IA_PROVEDOR, MODELO_IA, YOUTUBE_API_KEY, ADMIN_EMAIL, LINK_ASSINATURA, PRECO_TXT, DIAS_TESTE, SUPORTE_WHATSAPP, SUPORTE_EMAIL, SUGESTOES_URL, MP_PUBLIC_KEY, ASSINATURA_API, CARTAO_DESDE } from './config.js';
@@ -326,6 +326,7 @@ function render() {
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.v === rota || (['editar', 'prompt', 'revisar'].includes(rota) && b.dataset.v === 'fichas') || (rota === 'avaliacao' && b.dataset.v === 'medidas') || (rota.startsWith('dieta') && b.dataset.v === 'dieta')));
   barraAoVivo();
   $('hdrBtn').style.visibility = rota === 'ajustes' ? 'hidden' : 'visible';
+  if (statusAcesso().tipo === 'sem-cartao' && rota !== 'ajustes') { rota = 'assinar'; document.body.classList.add('noauth'); $('hdrBtn').style.visibility = 'hidden'; return vAssinar(); } // conta nova: cartão antes de usar o app
   if (!statusAcesso().ok && !ROTAS_LIVRES.has(rota) && !(rota === 'treino' && S.ativo)) return vAssinar();
   ({ assinar: vAssinar, admin: vAdmin, fichas: vFichas, editar: vEditar, prompt: vPrompt, revisar: vRevisar, treino: vTreino, evolucao: vEvolucao, medidas: vMedidas, avaliacao: vAvaliacao, dieta: vDieta, dietaTexto: vDietaTexto, dietaRevisar: vDietaRevisar, dietaEditar: vDietaEditar, ajustes: vAjustes })[rota]();
 }
@@ -1835,7 +1836,8 @@ async function montarCartao(acao, rotulo) {
         onReady: () => { $('cardLoad')?.remove(); },
         onSubmit: fd => chamarAPI(acao, { token: fd.token, email: fd.payer?.email })
           .then(r => { S.acesso = r.acesso; cartaoAberto = false; desmontarCartao();
-            toast(acao === 'cartao' ? 'Cartão atualizado ✅' : (r.acesso?.teste ? 'Teste grátis ativado! Bom treino 💪' : 'Assinatura ativada! 💪'), 4500); go('fichas'); })
+            toast(acao === 'cartao' ? 'Cartão atualizado ✅' : (r.acesso?.teste ? 'Teste grátis ativado! Bom treino 💪' : 'Assinatura ativada! 💪'), 4500); go('fichas');
+            if (acao === 'assinar' && !standalone() && !S.perfil.cfg.guiaInstalacao) setTimeout(() => { if (!$('modal').classList.contains('show')) guiaInstalacao(true); }, 1500); }) // depois de ativar: ensina a instalar
           .catch(e => { toast(e.message, 6000); throw e; }),
         onError: e => console.warn('cartão', e) } });
   } catch (e) { const b = $('cardBrick'); if (b) b.innerHTML = `<div class="banner bad">${esc(e.message || 'Erro ao carregar o formulário do cartão')}</div>`; }
@@ -1878,7 +1880,7 @@ function vAssinarCartao() {
     h += `<div class="card"><div id="cardBrick"><div id="cardLoad" class="mut"><span class="spin"></span>Carregando formulário seguro…</div></div></div>
       <div class="mut" style="text-align:center;font-size:12px;line-height:1.5;margin:-4px 8px 14px">🔒 Pagamento processado pelo Mercado Pago. Seu cartão não fica salvo no Hyper Fit. O Mercado Pago pode fazer uma verificação de valor simbólico no cartão, estornada automaticamente.</div>`;
   }
-  h += `<button class="btn ghost" onclick="A.go('fichas')">${s.tipo === 'sem-cartao' ? 'Agora não' : 'Voltar'}</button>`;
+  h += s.tipo === 'sem-cartao' ? `<div style="text-align:center"><button class="link" onclick="A.sair()">Sair da conta</button></div>` : `<button class="btn ghost" onclick="A.go('fichas')">Voltar</button>`;
   $('view').innerHTML = h;
   if ($('cardBrick')) montarCartao(ativa ? 'cartao' : 'assinar', ativa ? 'Salvar cartão' : (a.mpId ? 'Assinar' : 'Ativar teste grátis'));
 }
@@ -2042,7 +2044,7 @@ function posLogin() {
   if (!acessoRegistrado) { acessoRegistrado = true;
     setDoc(uref(), { email: S.user.email, nome: S.user.displayName || '', ultimoAcesso: Date.now(), ...(S.perfil.criadoEm ? {} : { criadoEm: inicioConta() }) }, { merge: true }).catch(() => {}); }
   conferirAssinatura();
-  if (!standalone() && !S.perfil.cfg.guiaInstalacao) setTimeout(() => { if (!$('modal').classList.contains('show')) guiaInstalacao(true); }, 900);
+  if (!standalone() && !S.perfil.cfg.guiaInstalacao && statusAcesso().tipo !== 'sem-cartao') setTimeout(() => { if (!$('modal').classList.contains('show')) guiaInstalacao(true); }, 900);
   return true;
 }
 
