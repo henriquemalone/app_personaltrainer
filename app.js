@@ -1,7 +1,7 @@
 // ================================================================
 //  Treino v2 — PWA + Firebase (Auth, Firestore offline, AI Logic)
 // ================================================================
-export const VERSAO_APP = '2.12.2';
+export const VERSAO_APP = '2.12.4';
 const FB = 'https://www.gstatic.com/firebasejs/12.19.0/';
 
 import { firebaseConfig, RECAPTCHA_SITE_KEY, IA_PROVEDOR, MODELO_IA, YOUTUBE_API_KEY, ADMIN_EMAIL, LINK_ASSINATURA, PRECO_TXT, DIAS_TESTE, SUPORTE_WHATSAPP, SUPORTE_EMAIL, SUGESTOES_URL, MP_PUBLIC_KEY, ASSINATURA_API, CARTAO_DESDE } from './config.js';
@@ -48,7 +48,15 @@ document.addEventListener('focusin', e => {
   setTimeout(() => { try { if (document.activeElement === t) t.setSelectionRange(0, t.value.length); } catch (x) {} }, 40);
 });
 const clone = o => JSON.parse(JSON.stringify(o));
-function toast(m, ms = 2800) { const t = $('toast'); t.textContent = m; t.style.display = 'block'; clearTimeout(t._h); t._h = setTimeout(() => t.style.display = 'none', ms); }
+// Avisos: verde = deu certo, vermelho = erro (ficam mais tempo na tela), azul = informação. Toque para fechar.
+function toast(m, ms = 3200, tipo) {
+  const t = $('toast'); m = String(m ?? '');
+  tipo = tipo || (/erro|não foi possível|não consegui|falh|recusad|inválid|sem internet|sem acesso|sem permissão|bloquead|indisponível/i.test(m) ? 'erro'
+    : /✅|💪|🙌|salv|enviad|ativad|atualizad|criad|excluíd|importad|renomead|cancelad|copiad|obrigad/i.test(m) ? 'ok' : 'info');
+  t.className = 'toast ' + tipo; t.textContent = (tipo === 'erro' ? '⚠️ ' : '') + m; t.style.display = 'block';
+  t.onclick = () => { t.style.display = 'none'; };
+  clearTimeout(t._h); t._h = setTimeout(() => t.style.display = 'none', tipo === 'erro' ? Math.max(ms, 6000) : ms);
+}
 const standalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 const QS0 = location.search; // parâmetros da URL de entrada (antes de serem limpos)
 const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -1230,7 +1238,7 @@ function vAjustes() {
   <div class="card"><b>Ajuda</b><div class="btns" style="margin-top:10px">
     <button class="btn sm" onclick="A.sugerir()">💡 Sugerir melhoria</button>
     ${linkWhats("Olá! Preciso de ajuda com o Hyper Fit. Meu e-mail: " + S.user.email) ? `<a class="btn sm" href="${esc(linkWhats("Olá! Preciso de ajuda com o Hyper Fit. Meu e-mail: " + S.user.email))}" target="_blank" rel="noopener">💬 Falar com o suporte</a>` : ''}
-    <button class="btn sm ghost" onclick="A.guiaInstalacao()">📲 Como instalar</button>
+    ${standalone() ? '' : `<button class="btn sm ghost" onclick="A.guiaInstalacao()">📲 Como instalar</button>`}
     <a class="btn sm ghost" href="termos.html" target="_blank">Termos de uso</a><a class="btn sm ghost" href="privacidade.html" target="_blank">Privacidade</a></div></div>
   <div class="card"><b>Nuvem</b><div class="mut" style="margin-top:6px;line-height:1.7">
     Seus dados ficam salvos na sua conta e aparecem em qualquer celular em que você entrar.<br>
@@ -1818,6 +1826,19 @@ function carregarMP() {
   return new Promise((ok, erro) => { const sc = document.createElement('script'); sc.src = 'https://sdk.mercadopago.com/js/v2'; sc.onload = ok; sc.onerror = () => erro(new Error('Não foi possível carregar o Mercado Pago. Confira a internet.')); document.head.appendChild(sc); });
 }
 function desmontarCartao() { try { brickCtl?.unmount(); } catch (e) {} brickCtl = null; }
+function msgPagamento(m) {
+  m = String(m || '');
+  if (/different site|payer.*(invalid|not found)|test user|cannot operate between/i.test(m)) return 'O Mercado Pago não aceitou o e-mail do pagador. Se for um teste, confira o e-mail da conta de teste.';
+  if (/card_token|token.*(invalid|expired|used)/i.test(m)) return 'Os dados do cartão expiraram. Digite o cartão de novo e tente outra vez.';
+  if (/rejected|recusad|cc_rejected|insufficient/i.test(m)) return 'O cartão foi recusado. Confira os dados ou use outro cartão de crédito.';
+  if (/failed to fetch|network/i.test(m)) return 'Sem conexão com o servidor de pagamento. Confira a internet e tente de novo.';
+  return m;
+}
+function mostrarErroCartao(m) {
+  const box = $('cardErro'); if (!box) return toast(m, 7000, 'erro');
+  box.innerHTML = `<div class="banner bad"><b>Não foi possível ativar</b>${esc(m)}<button class="btn sm" style="margin-top:10px;display:block" onclick="A.recarregarCartao()">Tentar de novo</button></div>`;
+  box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
 async function chamarAPI(rota, body) {
   const t = await S.user.getIdToken();
   const r = await fetch(ASSINATURA_API.replace(/\/+$/, '') + '/' + rota, { method: 'POST', headers: { Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
@@ -1838,9 +1859,9 @@ async function montarCartao(acao, rotulo) {
           .then(r => { S.acesso = r.acesso; cartaoAberto = false; desmontarCartao();
             toast(acao === 'cartao' ? 'Cartão atualizado ✅' : (r.acesso?.teste ? 'Teste grátis ativado! Bom treino 💪' : 'Assinatura ativada! 💪'), 4500); go('fichas');
             if (acao === 'assinar' && !standalone() && !S.perfil.cfg.guiaInstalacao) setTimeout(() => { if (!$('modal').classList.contains('show')) guiaInstalacao(true); }, 1500); }) // depois de ativar: ensina a instalar
-          .catch(e => { toast(e.message, 6000); throw e; }),
-        onError: e => console.warn('cartão', e) } });
-  } catch (e) { const b = $('cardBrick'); if (b) b.innerHTML = `<div class="banner bad">${esc(e.message || 'Erro ao carregar o formulário do cartão')}</div>`; }
+          .catch(e => { const m = msgPagamento(e.message); toast(m, 7000, 'erro'); mostrarErroCartao(m); throw e; }),
+        onError: e => { console.warn('cartão', e); if (e?.type === 'critical') mostrarErroCartao('O formulário do cartão teve um problema. Toque em "Tentar de novo".'); } } });
+  } catch (e) { const b = $('cardBrick'); if (b) b.innerHTML = `<div class="banner bad"><b>O formulário do cartão não carregou</b>${esc(e.message || 'Tente de novo em instantes.')}<button class="btn sm" style="margin-top:10px;display:block" onclick="A.recarregarCartao()">Tentar de novo</button></div>`; }
 }
 // Reserva: se a data de cobrança já passou, confere direto no Mercado Pago (caso um aviso automático tenha se perdido)
 let assinaturaConferida = false;
@@ -1866,7 +1887,7 @@ function vAssinarCartao() {
       <div class="mut" style="margin:8px 0 12px;line-height:1.7">${a.teste && a.proxCobranca ? `Grátis até ${dtC(diaAntes(a.proxCobranca))}<br>Primeira cobrança: ${esc(PRECO_TXT.replace('/mês', ''))} em ${dtC(a.proxCobranca)}` : a.proxCobranca ? `Próxima cobrança: ${esc(PRECO_TXT.replace('/mês', ''))} em ${dtC(a.proxCobranca)}` : ''}<br>Renova sozinha todo mês. Cancele quando quiser.</div>
       ${cartaoAberto || s.tipo === 'recusado' ? '' : `<button class="btn ghost" style="margin-bottom:8px" onclick="A.trocarCartao()">Trocar cartão</button>`}
       <button class="btn bad" onclick="A.cancelarAssinatura()">Cancelar assinatura</button></div>`;
-    if (cartaoAberto || s.tipo === 'recusado') h += `<div class="card"><b>${s.tipo === 'recusado' ? 'Atualize o cartão' : 'Novo cartão'}</b><div id="cardBrick" style="margin-top:10px"><div id="cardLoad" class="mut"><span class="spin"></span>Carregando formulário seguro…</div></div></div>`;
+    if (cartaoAberto || s.tipo === 'recusado') h += `<div id="cardErro"></div><div class="card"><b>${s.tipo === 'recusado' ? 'Atualize o cartão' : 'Novo cartão'}</b><div id="cardBrick" style="margin-top:10px"><div id="cardLoad" class="mut"><span class="spin"></span>Carregando formulário seguro…</div></div></div>`;
   } else if (s.tipo === 'vitalicio' || s.tipo === 'admin' || (s.ok && !s.mp && s.tipo === 'assinante')) {
     h += `<div class="banner info"><b>✅ ${esc(s.txt)}</b>Obrigado por apoiar o app!</div>`;
   } else {
@@ -1877,7 +1898,7 @@ function vAssinarCartao() {
           <div><i></i><span><b>Hoje · R$ 0,00</b><span class="mut">Acesso completo liberado na hora</span></span></div>
           <div><i class="o"></i><span><b>${dtC(fim)} · ${esc(PRECO_TXT.replace('/mês', ''))}</b><span class="mut">Primeira cobrança, depois todo mês</span></span></div></div>
           <div class="mut" style="margin-top:6px">Cancele até ${dtC(diaAntes(fim))} e não paga nada.</div></div>`;
-    h += `<div class="card"><div id="cardBrick"><div id="cardLoad" class="mut"><span class="spin"></span>Carregando formulário seguro…</div></div></div>
+    h += `<div id="cardErro"></div><div class="card"><div id="cardBrick"><div id="cardLoad" class="mut"><span class="spin"></span>Carregando formulário seguro…</div></div></div>
       <div class="mut" style="text-align:center;font-size:12px;line-height:1.5;margin:-4px 8px 14px">🔒 Pagamento processado pelo Mercado Pago. Seu cartão não fica salvo no Hyper Fit. O Mercado Pago pode fazer uma verificação de valor simbólico no cartão, estornada automaticamente.</div>`;
   }
   h += s.tipo === 'sem-cartao' ? `<div style="text-align:center"><button class="link" onclick="A.sair()">Sair da conta</button></div>` : `<button class="btn ghost" onclick="A.go('fichas')">Voltar</button>`;
@@ -2088,7 +2109,7 @@ window.A = { go, editar, df, d, ds, toggleBi, moverEx, removerEx, addEx, addSeri
   abaDieta: k => { abaDieta = k; refAberta = null; vDieta(); }, mudaDia, agua: aguaClick, abreRef, marcaRef, subsAlimento, trocaAlimento, comiOutra, estimar, registrarExtra, removeExtra, voltarPlano,
   setTextoDieta: v => { textoDieta = v; }, gerarDieta, setDietaImp: (k, v) => { dietaImport[k] = v; }, salvarDietaImport, editarPlano, dp, dm, dr, di, dqn, dun, addItem, remItem, addRef, remRef, metasDosItens, salvarPlanoManual, excluirPlano,
   verExercicio, admLiberar, admUsar, admRecarregar: () => { adminLista = null; vAdmin(); }, aceitarTermos, guiaInstalacao: () => guiaInstalacao(false), instalarAgora, excluirConta, confirmarExclusao,
-  recuperarDoCadastro, cancelarAssinatura, trocarCartao, irLogin, voltarLanding, setNomeTreino, toggleProg, toggleFicha, menuProg, renomearProg, salvarNomeProg, validadeProg, salvarValidadeProg, atualProg, excluirProg, menuFicha, duplicarFicha, novoTreinoManual, criarTreinoManual, trocarAtual, pularOuProximo, sugerir, enviarSugestao, sugTipo: setSugTipo,
+  recuperarDoCadastro, cancelarAssinatura, trocarCartao, recarregarCartao: () => { desmontarCartao(); vAssinar(); }, irLogin, voltarLanding, setNomeTreino, toggleProg, toggleFicha, menuProg, renomearProg, salvarNomeProg, validadeProg, salvarValidadeProg, atualProg, excluirProg, menuFicha, duplicarFicha, novoTreinoManual, criarTreinoManual, trocarAtual, pularOuProximo, sugerir, enviarSugestao, sugTipo: setSugTipo,
   setTema: t => { aplicarTema(t); S.perfil.cfg.tema = t; salvarCfg(); keepScroll(vAjustes); },
   modo: m => { const em = $('aEmail')?.value || ''; modoAuth = m; vAuth(); if (em && $('aEmail')) $('aEmail').value = em; } };
 
