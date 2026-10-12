@@ -1,10 +1,10 @@
 // ================================================================
 //  Treino v2 — PWA + Firebase (Auth, Firestore offline, AI Logic)
 // ================================================================
-export const VERSAO_APP = '2.11.0';
+export const VERSAO_APP = '2.12.0';
 const FB = 'https://www.gstatic.com/firebasejs/12.19.0/';
 
-import { firebaseConfig, RECAPTCHA_SITE_KEY, IA_PROVEDOR, MODELO_IA, YOUTUBE_API_KEY, ADMIN_EMAIL, LINK_ASSINATURA, PRECO_TXT, DIAS_TESTE, SUPORTE_WHATSAPP, SUPORTE_EMAIL, SUGESTOES_URL } from './config.js';
+import { firebaseConfig, RECAPTCHA_SITE_KEY, IA_PROVEDOR, MODELO_IA, YOUTUBE_API_KEY, ADMIN_EMAIL, LINK_ASSINATURA, PRECO_TXT, DIAS_TESTE, SUPORTE_WHATSAPP, SUPORTE_EMAIL, SUGESTOES_URL, MP_PUBLIC_KEY, ASSINATURA_API, CARTAO_DESDE } from './config.js';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword,
   sendPasswordResetEmail, signOut, updateProfile, deleteUser, reauthenticateWithCredential, EmailAuthProvider } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js';
@@ -128,7 +128,7 @@ function erroEscuta(e) { console.error(e); toast('Sem acesso aos dados: ' + (e.c
 let primeiraCarga = true;
 function aoMudar(o) {
   if (!Object.values(S.pronto).every(Boolean)) return;
-  if (primeiraCarga) { primeiraCarga = false; if (S.ativo) { rota = 'treino'; pilha.push('treino'); history.pushState({ rota: 'treino', i: 1 }, ''); } render(); if (posLogin()) { checarAvisoValidade(); checarMigracao(); } return; }
+  if (primeiraCarga) { primeiraCarga = false; if (S.ativo) { rota = 'treino'; pilha.push('treino'); history.pushState({ rota: 'treino', i: 1 }, ''); } if (statusAcesso().tipo === 'sem-cartao' && !S.ativo) { rota = 'assinar'; pilha.push('assinar'); history.pushState({ rota: 'assinar', i: pilha.length - 1 }, ''); } render(); if (posLogin()) { checarAvisoValidade(); checarMigracao(); } return; }
   if (['editar', 'prompt', 'auth', 'revisar', 'avaliacao', 'dietaTexto', 'dietaRevisar', 'dietaEditar'].includes(rota)) return;
   if (rota === 'dieta' && (o === 'diario' || o === 'plano') && document.getElementById('modal').classList.contains('show')) return; // não atrapalhar quem está digitando
   if (rota === 'treino' && S.ativo && o !== 'ativo') return;
@@ -318,6 +318,7 @@ window.addEventListener('popstate', e => {
 const empilharCamada = () => { pilha.push('#camada'); history.pushState({ rota, camada: true, i: pilha.length - 1 }, ''); };
 function render() {
   if (!configurado) return vNaoConfigurado();
+  if (brickCtl && rota !== 'assinar') desmontarCartao();
   if (!S.user) return mostrarLanding() ? vLanding() : vAuth();
   document.body.classList.remove('noauth', 'landing');
   const emT = rota === 'treino' && !!S.ativo; document.body.classList.toggle('emtreino', emT); $('tBar').style.display = emT ? 'block' : 'none';
@@ -362,15 +363,16 @@ function vLanding() {
   const faq = [
     ['Preciso ter personal ou nutricionista?', 'Não. Você pode montar seus treinos e sua dieta no app. Se já tem um profissional, é só colar o que ele mandou: o app organiza tudo. O Hyper Fit não substitui o acompanhamento profissional.'],
     ['Funciona no iPhone e no Android?', 'Sim. O Hyper Fit funciona pelo navegador e pode ser instalado na tela inicial, como um app, nos dois sistemas. Seus dados ficam na nuvem e aparecem em qualquer aparelho em que você entrar.'],
-    ['Preciso colocar cartão para testar?', `Não. São ${DIAS_TESTE} dias grátis, sem cartão. Depois, se quiser continuar, a assinatura é ${PRECO_TXT}.`],
-    ['Como cancelo?', 'Quando quiser, direto no Mercado Pago, sem multa. Você continua com acesso até o fim do período pago.'],
+    MODO_CARTAO ? ['Preciso colocar cartão para testar?', `Sim. Para ativar o teste você cadastra um cartão de crédito, mas nada é cobrado nos primeiros ${DIAS_TESTE} dias. Se cancelar antes, não paga nada. Se continuar, a cobrança de ${PRECO_TXT.replace('/mês', '')} é feita no dia seguinte ao fim do teste e depois todo mês.`]
+      : ['Preciso colocar cartão para testar?', `Não. São ${DIAS_TESTE} dias grátis, sem cartão. Depois, se quiser continuar, a assinatura é ${PRECO_TXT}.`],
+    ['Como cancelo?', MODO_CARTAO ? 'No próprio app, em Ajustes → Assinatura, a qualquer momento e sem multa. Durante o teste, nada é cobrado; depois, você continua com acesso até o fim do mês pago.' : 'Quando quiser, direto no Mercado Pago, sem multa. Você continua com acesso até o fim do período pago.'],
     ['Meus dados ficam seguros?', 'Seus dados ficam na sua conta, protegidos, e só você tem acesso. Não vendemos dados e você pode exportar ou excluir tudo pelo próprio app.']];
   $('view').innerHTML = `<div class="ld">
     <div class="bar"><b><img src="icon-192.png" alt="">Hyper Fit</b><button onclick="A.irLogin('entrar')">Entrar</button></div>
     <div class="hero"><h2>Seu treino, sua dieta e sua evolução <em>em um só app</em></h2>
       <p>Cole o treino do seu personal e o plano da sua nutri: o app monta tudo sozinho. Na academia, é só seguir passo a passo.</p>
       <button class="cta" onclick="A.irLogin('criar')">Testar ${DIAS_TESTE} dias grátis</button>
-      <div class="small">Sem cartão · depois ${esc(PRECO_TXT)} · cancele quando quiser</div></div>
+      <div class="small">${MODO_CARTAO ? `Depois ${esc(PRECO_TXT)} · cancele antes e não paga nada` : `Sem cartão · depois ${esc(PRECO_TXT)} · cancele quando quiser`}</div></div>
     <div class="shots"><img src="img/landing-treino.webp" alt="Tela do treino guiado" loading="lazy"><img src="img/landing-cargas.webp" alt="Gráfico de evolução de cargas" loading="lazy"><img src="img/landing-dieta.webp" alt="Tela da dieta do dia" loading="lazy"></div>
     <div class="sec">
       ${[['✨', 'Cadastro por texto com IA', 'Cole o treino ou a dieta do jeito que veio. Em segundos vira ficha com séries, cargas e descanso.'],
@@ -381,7 +383,7 @@ function vLanding() {
         .map(([e, t, d]) => `<div class="ben"><div class="e">${e}</div><div><b>${t}</b><span>${d}</span></div></div>`).join('')}</div>
     <div class="sec"><h3>Como funciona</h3><div class="steps"><div><em>1</em>Crie sua conta em 30 segundos</div><div><em>2</em>Cole seu treino e sua dieta</div><div><em>3</em>Treine. O app registra tudo</div></div></div>
     <div class="price"><span class="chip ok">Preço de fundador</span><div class="v">${esc(PRECO_TXT.replace('/mês', ''))}<small>/mês</small></div>
-      <ul><li>✓ ${DIAS_TESTE} dias grátis, sem cartão</li><li>✓ Treinos, cargas, medidas e dieta</li><li>✓ IA para cadastrar treino e dieta</li><li>✓ Cancele quando quiser</li></ul>
+      <ul><li>✓ ${DIAS_TESTE} dias grátis${MODO_CARTAO ? '' : ', sem cartão'}</li><li>✓ Treinos, cargas, medidas e dieta</li><li>✓ IA para cadastrar treino e dieta</li><li>✓ Cancele quando quiser</li></ul>
       <button class="cta" onclick="A.irLogin('criar')">Começar meu teste grátis</button></div>
     <div class="sec" style="padding-bottom:8px"><h3>Perguntas frequentes</h3></div>
     ${faq.map(([q, r]) => `<details><summary>${q}</summary><p>${r}</p></details>`).join('')}
@@ -403,7 +405,7 @@ function vAuth() {
       ${modoAuth === 'criar' ? '' : ''}${modoAuth !== 'senha' ? `<label class="f">Senha</label><input class="in" id="aSenha" type="password" minlength="6" autocomplete="${modoAuth === 'criar' ? 'new-password' : 'current-password'}" required>` : ''}
       ${modoAuth === 'criar' ? `<label class="row left" style="gap:10px;font-size:13px;margin-top:14px;align-items:flex-start;color:var(--mut)"><input type="checkbox" id="aAceite" required style="width:20px;height:20px;flex-shrink:0;margin-top:1px">
         <span>Li e aceito os <a href="termos.html" target="_blank" style="color:var(--act)">Termos de Uso</a> e a <a href="privacidade.html" target="_blank" style="color:var(--act)">Política de Privacidade</a>, tenho 18 anos ou mais e consinto com o tratamento dos meus dados de saúde (treino, medidas e alimentação).</span></label>
-        <div class="mut" style="font-size:12px;margin-top:8px">🎁 ${DIAS_TESTE} dias grátis, sem cartão. Depois, ${esc(PRECO_TXT)}.</div>` : ''}
+        <div class="mut" style="font-size:12px;margin-top:8px">🎁 ${DIAS_TESTE} dias grátis${MODO_CARTAO ? ' (no próximo passo você cadastra o cartão; cancele antes e não paga nada)' : ', sem cartão'}. Depois, ${esc(PRECO_TXT)}.</div>` : ''}
       <button class="btn" id="aBtn" style="margin-top:18px">${modoAuth === 'criar' ? 'Criar conta' : modoAuth === 'senha' ? 'Enviar e-mail de recuperação' : 'Entrar'}</button>
     </form>
     ${!jaLogou && !standalone() ? `<div style="text-align:center;margin-top:8px"><button class="link" onclick="A.voltarLanding()">← Conhecer o Hyper Fit</button></div>` : ''}
@@ -1222,7 +1224,7 @@ function vAjustes() {
       <div><label>Altura (cm)</label><input class="in" id="pAlt" inputmode="numeric" value="${esc(corpo().altura || '')}"></div></div>
     <div class="mut" style="margin:8px 0 10px;font-size:12px">Usado no IMC, na relação cintura/altura e no % de gordura por dobras.</div>
     <button class="btn ghost" onclick="A.salvarCorpo()">Salvar perfil</button></div>
-  <div class="card"><div class="row"><div><b>Assinatura</b><div class="mut" style="margin-top:4px">${esc(statusAcesso().txt)}</div></div><button class="btn sm" onclick="A.go('assinar')">${statusAcesso().tipo === 'vitalicio' || statusAcesso().tipo === 'admin' ? 'Ver' : 'Assinar'}</button></div>
+  <div class="card"><div class="row"><div><b>Assinatura</b><div class="mut" style="margin-top:4px">${esc(statusAcesso().txt)}</div></div><button class="btn sm" onclick="A.go('assinar')">${statusAcesso().tipo === 'vitalicio' || statusAcesso().tipo === 'admin' ? 'Ver' : statusAcesso().mp ? 'Gerenciar' : statusAcesso().tipo === 'sem-cartao' ? 'Ativar' : 'Assinar'}</button></div>
     ${ehAdmin() ? `<button class="btn" style="margin-top:12px" onclick="A.go('admin')">⚙ Admin: liberar acessos</button>` : ''}</div>
   <div class="card"><b>Ajuda</b><div class="btns" style="margin-top:10px">
     <button class="btn sm" onclick="A.sugerir()">💡 Sugerir melhoria</button>
@@ -1767,14 +1769,31 @@ function excluirPlano() { if (!confirm('Excluir o plano alimentar? O histórico 
 
 // ================= Comercial: teste grátis, assinatura, vitalício, admin =================
 // acessos/{uid} = {tipo:'assinante'|'vitalicio', ate:'YYYY-MM-DD'|null, email, em} — só o admin grava (regras do Firestore)
-const VERSAO_TERMOS = '2026-10';
+const VERSAO_TERMOS = '2026-10b'; // mudou: teste grátis com cartão e cobrança automática
 const ehAdmin = () => !!ADMIN_EMAIL && S.user?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
 function inicioConta() { const t = Date.parse(S.user?.metadata?.creationTime || ''); return isFinite(t) ? t : (S.perfil.criadoEm || Date.now()); }
+// Teste grátis com cartão (assinatura automática no Mercado Pago). Desligado se MP_PUBLIC_KEY / ASSINATURA_API estiverem vazios.
+const MODO_CARTAO = !!(MP_PUBLIC_KEY && ASSINATURA_API);
+const PRECO_NUM = num(String(PRECO_TXT).replace(/[^\d,.]/g, '')) || 9.9;
+const diaAntes = d => ymd(new Date(new Date(d + 'T12:00').getTime() - 864e5));
+const contaComCartao = () => MODO_CARTAO && inicioConta() >= Date.parse((CARTAO_DESDE || '2000-01-01') + 'T00:00:00-03:00');
 function statusAcesso() {
   if (ehAdmin()) return { ok: true, tipo: 'admin', txt: 'Administrador' };
   const a = S.acesso;
   if (a?.tipo === 'vitalicio') return { ok: true, tipo: 'vitalicio', txt: 'Acesso vitalício' };
+  if (a?.fonte === 'mp') { // assinatura automática (Mercado Pago)
+    const pc = a.proxCobranca;
+    if (a.ate && a.ate >= hoje()) {
+      if (a.mpStatus === 'cancelled') return { ok: true, tipo: 'cancelada', mp: true, txt: `Assinatura cancelada · acesso até ${dtC(a.ate)}` };
+      if (a.ultimoPagamento === 'rejected') return { ok: true, tipo: 'recusado', mp: true, txt: 'Pagamento recusado · atualize o cartão' };
+      if (a.teste) return { ok: true, tipo: 'teste-cartao', mp: true, txt: pc ? `Teste grátis até ${dtC(diaAntes(pc))}` : 'Teste grátis' };
+      return { ok: true, tipo: 'assinante', mp: true, txt: pc ? `Assinatura ativa · próxima cobrança ${dtC(pc)}` : 'Assinatura ativa' };
+    }
+    if (a.ultimoPagamento === 'rejected') return { ok: false, tipo: 'recusado', mp: true, txt: 'Pagamento recusado' };
+    return { ok: false, tipo: 'expirada', mp: true, txt: a.mpStatus === 'cancelled' ? 'Assinatura cancelada' : 'Assinatura vencida' };
+  }
   if (a?.tipo === 'assinante' && a.ate && a.ate >= hoje()) { const d = diasAte(a.ate); return { ok: true, tipo: 'assinante', dias: d, txt: `Assinante até ${dtC(a.ate)}` }; }
+  if (contaComCartao()) return { ok: false, tipo: 'sem-cartao', txt: 'Ative seu teste grátis' };
   const fim = inicioConta() + DIAS_TESTE * 864e5, rest = Math.ceil((fim - Date.now()) / 864e5);
   if (rest > 0) return { ok: true, tipo: 'teste', dias: rest, txt: `Teste grátis: ${rest} dia${rest > 1 ? 's' : ''} restante${rest > 1 ? 's' : ''}` };
   return { ok: false, tipo: a?.tipo === 'assinante' ? 'expirada' : 'fim-teste', txt: a?.tipo === 'assinante' ? 'Assinatura vencida' : 'Teste grátis encerrado' };
@@ -1783,12 +1802,88 @@ const ROTAS_LIVRES = new Set(['fichas', 'ajustes', 'assinar', 'admin']);
 function bannerAcesso() {
   const s = statusAcesso();
   if (s.tipo === 'teste') return `<div class="banner info"><div class="row"><div><b>🎁 ${s.txt}</b>Aproveite tudo do app. Depois, ${esc(PRECO_TXT)}.</div><button class="btn sm" onclick="A.go('assinar')">Assinar</button></div></div>`;
+  if (s.tipo === 'sem-cartao') return `<div class="banner info"><div class="row"><div><b>🎁 Ative seu teste grátis</b>${DIAS_TESTE} dias grátis, depois ${esc(PRECO_TXT)}.</div><button class="btn sm" onclick="A.go('assinar')">Ativar</button></div></div>`;
+  if (s.tipo === 'recusado') return `<div class="banner bad"><b>💳 ${s.txt}</b>O Mercado Pago não conseguiu cobrar o seu cartão. Atualize para não perder o acesso.<button class="btn sm" style="margin-top:10px;display:block" onclick="A.go('assinar')">Atualizar cartão</button></div>`;
+  if (s.mp) return s.ok ? '' : `<div class="banner bad"><b>🔒 ${s.txt}</b>Seus dados continuam salvos. Assine de novo para voltar a usar tudo.<button class="btn sm" style="margin-top:10px;display:block" onclick="A.go('assinar')">Assinar ${esc(PRECO_TXT)}</button></div>`;
   if (s.tipo === 'assinante' && s.dias <= 3) return `<div class="banner warn"><div class="row"><div><b>Sua assinatura vence em ${s.dias} dia${s.dias === 1 ? '' : 's'}</b>Renove para não perder o acesso.</div><button class="btn sm" onclick="A.go('assinar')">Renovar</button></div></div>`;
   if (!s.ok) return `<div class="banner bad"><b>🔒 ${s.txt}</b>Seus dados continuam salvos. Assine para voltar a treinar, registrar medidas e dieta. Os vídeos dos exercícios continuam liberados.<button class="btn sm" style="margin-top:10px;display:block" onclick="A.go('assinar')">Assinar ${esc(PRECO_TXT)}</button></div>`;
   return '';
 }
 const linkWhats = msg => SUPORTE_WHATSAPP ? `https://wa.me/${SUPORTE_WHATSAPP}?text=${encodeURIComponent(msg)}` : (SUPORTE_EMAIL ? `mailto:${SUPORTE_EMAIL}?subject=${encodeURIComponent('Suporte Hyper Fit')}&body=${encodeURIComponent(msg)}` : '');
+// ---------- Assinatura automática: formulário de cartão do Mercado Pago ----------
+let mpSdk = null, brickCtl = null, cartaoAberto = false;
+function carregarMP() {
+  if (window.MercadoPago) return Promise.resolve();
+  return new Promise((ok, erro) => { const sc = document.createElement('script'); sc.src = 'https://sdk.mercadopago.com/js/v2'; sc.onload = ok; sc.onerror = () => erro(new Error('Não foi possível carregar o Mercado Pago. Confira a internet.')); document.head.appendChild(sc); });
+}
+function desmontarCartao() { try { brickCtl?.unmount(); } catch (e) {} brickCtl = null; }
+async function chamarAPI(rota, body) {
+  const t = await S.user.getIdToken();
+  const r = await fetch(ASSINATURA_API.replace(/\/+$/, '') + '/' + rota, { method: 'POST', headers: { Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+  const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.erro || 'Não foi possível concluir. Tente de novo.'); return j;
+}
+async function montarCartao(acao, rotulo) {
+  desmontarCartao();
+  try {
+    await carregarMP(); if (!$('cardBrick')) return;
+    if (!mpSdk) mpSdk = new window.MercadoPago(MP_PUBLIC_KEY, { locale: 'pt-BR' });
+    brickCtl = await mpSdk.bricks().create('cardPayment', 'cardBrick', {
+      initialization: { amount: PRECO_NUM, payer: { email: S.user.email } },
+      customization: { visual: { style: { theme: document.documentElement.dataset.theme === 'light' ? 'default' : 'dark' }, texts: { formSubmit: rotulo } },
+        paymentMethods: { maxInstallments: 1, types: { excluded: ['debit_card', 'prepaid_card'] } } },
+      callbacks: {
+        onReady: () => { $('cardLoad')?.remove(); },
+        onSubmit: fd => chamarAPI(acao, { token: fd.token, email: fd.payer?.email })
+          .then(r => { S.acesso = r.acesso; cartaoAberto = false; desmontarCartao();
+            toast(acao === 'cartao' ? 'Cartão atualizado ✅' : (r.acesso?.teste ? 'Teste grátis ativado! Bom treino 💪' : 'Assinatura ativada! 💪'), 4500); go('fichas'); })
+          .catch(e => { toast(e.message, 6000); throw e; }),
+        onError: e => console.warn('cartão', e) } });
+  } catch (e) { const b = $('cardBrick'); if (b) b.innerHTML = `<div class="banner bad">${esc(e.message || 'Erro ao carregar o formulário do cartão')}</div>`; }
+}
+// Reserva: se a data de cobrança já passou, confere direto no Mercado Pago (caso um aviso automático tenha se perdido)
+let assinaturaConferida = false;
+async function conferirAssinatura() {
+  const a = S.acesso; if (!MODO_CARTAO || assinaturaConferida || a?.fonte !== 'mp' || a.mpStatus === 'cancelled' || !a.proxCobranca || a.proxCobranca > hoje()) return;
+  assinaturaConferida = true;
+  try { const r = await chamarAPI('sincronizar'); if (r.acesso) { S.acesso = r.acesso; if (['fichas', 'assinar', 'ajustes'].includes(rota)) keepScroll(render); } } catch (e) { console.warn('conferir assinatura', e); }
+}
+async function cancelarAssinatura() {
+  const s = statusAcesso(), teste = s.tipo === 'teste-cartao';
+  if (!confirm(teste ? 'Cancelar o teste grátis? Nada será cobrado e o acesso termina agora.' : `Cancelar a assinatura? Você continua com acesso até ${dtC(S.acesso.ate)} e não haverá novas cobranças.`)) return;
+  try { const r = await chamarAPI('cancelar'); S.acesso = r.acesso; toast('Assinatura cancelada', 4000); keepScroll(vAssinar); }
+  catch (e) { toast(e.message, 6000); }
+}
+function trocarCartao() { cartaoAberto = true; vAssinar(); }
+function vAssinarCartao() {
+  const s = statusAcesso(), a = S.acesso || {};
+  setHdr(s.tipo === 'sem-cartao' ? `Último passo · ${DIAS_TESTE} dias grátis` : s.txt, s.tipo === 'sem-cartao' ? 'Ative seu teste grátis' : 'Assinatura');
+  const ativa = s.mp && ['teste-cartao', 'assinante', 'recusado'].includes(s.tipo);
+  let h = '';
+  if (ativa) {
+    h += `<div class="card"><div class="row"><b>Sua assinatura</b><span class="chip ${s.tipo === 'recusado' ? 'bad' : s.tipo === 'teste-cartao' ? 'bi' : 'ok'}">${s.tipo === 'recusado' ? 'Pagamento recusado' : s.tipo === 'teste-cartao' ? 'Teste grátis' : 'Ativa'}</span></div>
+      <div class="mut" style="margin:8px 0 12px;line-height:1.7">${a.teste && a.proxCobranca ? `Grátis até ${dtC(diaAntes(a.proxCobranca))}<br>Primeira cobrança: ${esc(PRECO_TXT.replace('/mês', ''))} em ${dtC(a.proxCobranca)}` : a.proxCobranca ? `Próxima cobrança: ${esc(PRECO_TXT.replace('/mês', ''))} em ${dtC(a.proxCobranca)}` : ''}<br>Renova sozinha todo mês. Cancele quando quiser.</div>
+      ${cartaoAberto || s.tipo === 'recusado' ? '' : `<button class="btn ghost" style="margin-bottom:8px" onclick="A.trocarCartao()">Trocar cartão</button>`}
+      <button class="btn bad" onclick="A.cancelarAssinatura()">Cancelar assinatura</button></div>`;
+    if (cartaoAberto || s.tipo === 'recusado') h += `<div class="card"><b>${s.tipo === 'recusado' ? 'Atualize o cartão' : 'Novo cartão'}</b><div id="cardBrick" style="margin-top:10px"><div id="cardLoad" class="mut"><span class="spin"></span>Carregando formulário seguro…</div></div></div>`;
+  } else if (s.tipo === 'vitalicio' || s.tipo === 'admin' || (s.ok && !s.mp && s.tipo === 'assinante')) {
+    h += `<div class="banner info"><b>✅ ${esc(s.txt)}</b>Obrigado por apoiar o app!</div>`;
+  } else {
+    const jaTestou = !!a.mpId, fim = ymd(new Date(Date.now() + DIAS_TESTE * 864e5));
+    if (s.tipo === 'cancelada') h += `<div class="banner info"><b>${esc(s.txt)}</b>Quer voltar? Assine de novo abaixo.</div>`;
+    h += jaTestou ? `<div class="card" style="text-align:center"><div style="font-size:28px;font-weight:800;color:var(--act)">${esc(PRECO_TXT)}</div><div class="mut">cobrança mensal automática · cancele quando quiser</div></div>`
+      : `<div class="card"><div class="tline">
+          <div><i></i><span><b>Hoje · R$ 0,00</b><span class="mut">Acesso completo liberado na hora</span></span></div>
+          <div><i class="o"></i><span><b>${dtC(fim)} · ${esc(PRECO_TXT.replace('/mês', ''))}</b><span class="mut">Primeira cobrança, depois todo mês</span></span></div></div>
+          <div class="mut" style="margin-top:6px">Cancele até ${dtC(diaAntes(fim))} e não paga nada.</div></div>`;
+    h += `<div class="card"><div id="cardBrick"><div id="cardLoad" class="mut"><span class="spin"></span>Carregando formulário seguro…</div></div></div>
+      <div class="mut" style="text-align:center;font-size:12px;line-height:1.5;margin:-4px 8px 14px">🔒 Pagamento processado pelo Mercado Pago. Seu cartão não fica salvo no Hyper Fit. O Mercado Pago pode fazer uma verificação de valor simbólico no cartão, estornada automaticamente.</div>`;
+  }
+  h += `<button class="btn ghost" onclick="A.go('fichas')">${s.tipo === 'sem-cartao' ? 'Agora não' : 'Voltar'}</button>`;
+  $('view').innerHTML = h;
+  if ($('cardBrick')) montarCartao(ativa ? 'cartao' : 'assinar', ativa ? 'Salvar cartão' : (a.mpId ? 'Assinar' : 'Ativar teste grátis'));
+}
 function vAssinar() {
+  if (MODO_CARTAO && !(S.acesso?.tipo === 'assinante' && S.acesso?.fonte !== 'mp' && statusAcesso().ok)) return vAssinarCartao();
   const s = statusAcesso(); setHdr(s.txt, 'Assinatura');
   const aviso = linkWhats(`Olá! Fiz a assinatura do Hyper Fit. Meu e-mail de cadastro é ${S.user.email}`);
   $('view').innerHTML = `<div class="card" style="text-align:center;padding:22px 16px">
@@ -1820,7 +1915,14 @@ async function carregarAdmin() {
 function statusDe(u) {
   const a = u.acesso;
   if (a?.tipo === 'vitalicio') return ['Vitalício', 'var(--ok)'];
+  if (a?.fonte === 'mp') {
+    if (a.mpStatus === 'cancelled') return [a.ate >= hoje() ? `Cancelou · até ${dtC(a.ate)}` : 'Cancelou', 'var(--warn)'];
+    if (a.ate < hoje() || a.ultimoPagamento === 'rejected') return ['Recusado', 'var(--bad)'];
+    if (a.teste) return [`Teste: até ${dtC(diaAntes(a.proxCobranca || a.ate))}`, 'var(--bi)'];
+    return ['Pagante', 'var(--ok)'];
+  }
   if (a?.tipo === 'assinante') return a.ate >= hoje() ? [`Assinante até ${dtC(a.ate)}`, 'var(--ok)'] : [`Venceu ${dtC(a.ate)}`, 'var(--bad)'];
+  if (MODO_CARTAO && (u.criadoEm || 0) >= Date.parse((CARTAO_DESDE || '2000-01-01') + 'T00:00:00-03:00')) return ['Sem cartão', 'var(--mut)'];
   const ini = u.criadoEm || 0, rest = Math.ceil((ini + DIAS_TESTE * 864e5 - Date.now()) / 864e5);
   return rest > 0 ? [`Teste: ${rest}d`, 'var(--warn)'] : ['Teste encerrado', 'var(--mut)'];
 }
@@ -1831,7 +1933,7 @@ function vAdmin() {
   const n = t => adminLista.filter(u => statusDe(u)[0].startsWith(t)).length;
   const origemTxt = u => u.origem ? [u.origem.source, u.origem.content].filter(Boolean).join(' · ') : 'sem origem';
   const porOrigem = {}; adminLista.forEach(u => { const k = origemTxt(u), pago = /Assinante|Vitalício/.test(statusDe(u)[0]); porOrigem[k] = porOrigem[k] || { c: 0, p: 0 }; porOrigem[k].c++; if (pago) porOrigem[k].p++; });
-  $('view').innerHTML = `<div class="kpis3"><div class="kpi"><b>${adminLista.length}</b><span class="mut">usuários</span></div><div class="kpi"><b>${n('Assinante') + n('Vitalício')}</b><span class="mut">com acesso pago/vitalício</span></div><div class="kpi"><b>${n('Teste:')}</b><span class="mut">em teste</span></div></div>
+  $('view').innerHTML = `<div class="kpis3"><div class="kpi"><b>${adminLista.length}</b><span class="mut">usuários</span></div><div class="kpi"><b>${n('Pagante') + n('Assinante')}</b><span class="mut">pagantes · ${(PRECO_NUM * (n('Pagante') + n('Assinante'))).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}/mês</span></div><div class="kpi"><b>${n('Teste:')}</b><span class="mut">em teste</span></div></div>
     <div class="card"><b>Liberar acesso</b>
       <label class="f">E-mail do usuário (o da conta no app)</label><input class="in" id="admEmail" type="email" placeholder="cliente@email.com">
       <label class="f">Tipo</label><select class="in" id="admTipo" style="max-width:100%"><option value="1">Assinante · 1 mês</option><option value="3">Assinante · 3 meses</option><option value="12">Assinante · 12 meses</option><option value="v">Vitalício</option><option value="x">Remover acesso</option></select>
@@ -1939,6 +2041,7 @@ function posLogin() {
   if (!checarAceite()) return false;
   if (!acessoRegistrado) { acessoRegistrado = true;
     setDoc(uref(), { email: S.user.email, nome: S.user.displayName || '', ultimoAcesso: Date.now(), ...(S.perfil.criadoEm ? {} : { criadoEm: inicioConta() }) }, { merge: true }).catch(() => {}); }
+  conferirAssinatura();
   if (!standalone() && !S.perfil.cfg.guiaInstalacao) setTimeout(() => { if (!$('modal').classList.contains('show')) guiaInstalacao(true); }, 900);
   return true;
 }
@@ -1983,7 +2086,7 @@ window.A = { go, editar, df, d, ds, toggleBi, moverEx, removerEx, addEx, addSeri
   abaDieta: k => { abaDieta = k; refAberta = null; vDieta(); }, mudaDia, agua: aguaClick, abreRef, marcaRef, subsAlimento, trocaAlimento, comiOutra, estimar, registrarExtra, removeExtra, voltarPlano,
   setTextoDieta: v => { textoDieta = v; }, gerarDieta, setDietaImp: (k, v) => { dietaImport[k] = v; }, salvarDietaImport, editarPlano, dp, dm, dr, di, dqn, dun, addItem, remItem, addRef, remRef, metasDosItens, salvarPlanoManual, excluirPlano,
   verExercicio, admLiberar, admUsar, admRecarregar: () => { adminLista = null; vAdmin(); }, aceitarTermos, guiaInstalacao: () => guiaInstalacao(false), instalarAgora, excluirConta, confirmarExclusao,
-  recuperarDoCadastro, irLogin, voltarLanding, setNomeTreino, toggleProg, toggleFicha, menuProg, renomearProg, salvarNomeProg, validadeProg, salvarValidadeProg, atualProg, excluirProg, menuFicha, duplicarFicha, novoTreinoManual, criarTreinoManual, trocarAtual, pularOuProximo, sugerir, enviarSugestao, sugTipo: setSugTipo,
+  recuperarDoCadastro, cancelarAssinatura, trocarCartao, irLogin, voltarLanding, setNomeTreino, toggleProg, toggleFicha, menuProg, renomearProg, salvarNomeProg, validadeProg, salvarValidadeProg, atualProg, excluirProg, menuFicha, duplicarFicha, novoTreinoManual, criarTreinoManual, trocarAtual, pularOuProximo, sugerir, enviarSugestao, sugTipo: setSugTipo,
   setTema: t => { aplicarTema(t); S.perfil.cfg.tema = t; salvarCfg(); keepScroll(vAjustes); },
   modo: m => { const em = $('aEmail')?.value || ''; modoAuth = m; vAuth(); if (em && $('aEmail')) $('aEmail').value = em; } };
 

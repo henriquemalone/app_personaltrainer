@@ -109,3 +109,41 @@ O e-mail chega com o texto, o tipo, a versão e o aparelho; **Responder** vai di
   - Link direto para o cadastro: `https://hypertreino.com.br/?cadastro`
   - Os links com UTM dos anúncios abrem a página de vendas e continuam gravando a origem.
 - Imagens da página: pasta `img/` (prints do app com dados de demonstração). Para trocar, substitua os arquivos mantendo os nomes.
+
+## Assinatura automática: teste grátis com cartão (v2.12)
+Fluxo: a pessoa cria a conta, cadastra o cartão (formulário do próprio Mercado Pago) e usa 7 dias grátis; no 8º dia o Mercado Pago cobra R$ 9,90 e depois todo mês. O app libera/bloqueia sozinho. Enquanto `MP_PUBLIC_KEY` e `ASSINATURA_API` estiverem vazios no `config.js`, o app continua no modelo antigo.
+
+### Parte 1 – Mercado Pago (credenciais)
+1. Entre em https://www.mercadopago.com.br/developers/panel/app com a sua conta de vendedor → **Criar aplicação** → dê o nome "Hyper Fit" e escolha o produto de pagamentos online/assinaturas.
+2. Na aplicação, abra **Credenciais de teste** e anote a **Public Key** e o **Access Token** de teste. (Depois, para valer de verdade, você usa as **Credenciais de produção**.)
+3. Em **Contas de teste**, crie uma conta **compradora** de teste e anote o e-mail dela (usado só nos testes).
+
+### Parte 2 – Função no Google Cloud (sem instalar nada)
+1. Abra https://console.cloud.google.com/run?project=apppersonal-df7d1 → **Escrever uma função** (Write a function).
+2. Nome do serviço: `hyperfit-api` · Região: `southamerica-east1` · Ambiente de execução: **Node.js 22** · Autenticação: **Permitir acesso público** (Allow public access) → **Criar**.
+3. Na aba **Origem/Source**: cole o conteúdo de `assinatura-funcao/index.js` no `index.js` e o de `assinatura-funcao/package.json` no `package.json`. No campo **Ponto de entrada da função** (Function entry point), escreva `api`.
+4. Clique em **Salvar e reimplantar** (Save and redeploy). Copie o **URL** que aparece no topo (ex.: `https://hyperfit-api-xxxx.southamerica-east1.run.app`).
+5. Variáveis: no serviço, **Editar e implantar nova revisão** → aba **Variáveis e secrets** → adicione:
+   - `MP_ACCESS_TOKEN` = Access Token (de teste agora; de produção depois)
+   - `MP_WEBHOOK_SECRET` = assinatura secreta do webhook (Parte 3, passo 2)
+   - `EMAIL_URL` = o mesmo endereço do `SUGESTOES_URL` (para receber e-mail a cada assinatura/cancelamento/pagamento)
+   - `TEST_PAYER_EMAIL` = e-mail da conta compradora de teste (**só durante o teste; apague em produção**)
+   - opcionais: `PRECO` (padrão 9.9) e `DIAS_TESTE` (padrão 7)
+   → **Implantar**.
+
+### Parte 3 – Avisos do Mercado Pago (webhook)
+1. Na aplicação do Mercado Pago → **Webhooks → Configurar notificações** → em **URL modo teste** cole `URL_DA_FUNÇÃO/webhook` (ex.: `https://hyperfit-api-xxxx.southamerica-east1.run.app/webhook`). Marque o evento **Planos e assinaturas** → **Salvar**.
+2. Copie a **assinatura secreta** gerada e coloque em `MP_WEBHOOK_SECRET` (Parte 2, passo 5).
+3. Mesmo se algum aviso se perder, o app confere a assinatura direto no Mercado Pago quando a data de cobrança passa.
+
+### Parte 4 – Ligar no app e testar
+1. `config.js`: `MP_PUBLIC_KEY` = Public Key (de teste), `ASSINATURA_API` = URL da função (sem `/webhook`). Publique.
+2. Crie uma conta nova no app → tela "Ative seu teste grátis" → use um **cartão de teste** do Mercado Pago (lista em developers → Cartões de teste; nome do titular `APRO` aprova).
+3. Confira: o app libera; em Ajustes → Assinatura aparece "Teste grátis até …" com a 1ª cobrança 7 dias depois; o Admin mostra "Teste"; chega e-mail "Nova assinatura". Teste também **Cancelar assinatura**.
+4. Me mande prints se algo não bater (principalmente a data da 1ª cobrança).
+
+### Parte 5 – Produção
+Troque `MP_PUBLIC_KEY` (config.js) e `MP_ACCESS_TOKEN` (função) pelas credenciais de **produção**, apague `TEST_PAYER_EMAIL`, configure a **URL modo produção** do webhook (mesmo endereço) e atualize `MP_WEBHOOK_SECRET` se mudar. Pronto.
+- Contas criadas antes de `CARTAO_DESDE` (config.js) mantêm o teste antigo sem cartão.
+- Vitalício continua sendo liberado à mão no Admin.
+- A função roda na cota gratuita do Cloud Run no seu volume; o Google pode cobrar centavos de armazenamento da imagem da função.
