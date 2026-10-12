@@ -89,3 +89,15 @@ Links com `?utm_source=...` (os dos anúncios) abrem o app direto em **Criar con
 4. **Limite por usuário (contra abuso):** https://console.cloud.google.com/apis/api/firebasevertexai.googleapis.com/quotas?project=apppersonal-df7d1 → filtre por **generate content requests** (por usuário, por minuto) → marque a cota → **Editar cota** → `10` → **Enviar solicitação**.
 5. `config.js`: `IA_PROVEDOR = "agent"` e `MODELO_IA = "gemini-3.6-flash"`. Quando o Google anunciar o fim do 3.6, troque só o nome do modelo.
 Custo esperado: centavos por usuário (importar treino ≈ R$ 0,10; dieta ≈ R$ 0,10; estimar refeição ≈ R$ 0,015). Acompanhe em Faturamento → Relatórios.
+
+## Sugestões de melhoria (v2.10)
+As sugestões enviadas pelo app (Ajustes → Ajuda → 💡 Sugerir melhoria) ficam salvas no Firestore e aparecem na tela **Admin**. Para recebê-las também **por e-mail**:
+1. **Regras:** Firestore → Regras → cole o `firestore.rules` atualizado → **Publicar** (sem isso, as sugestões não são gravadas).
+2. Entre em https://script.google.com **logado como hypertreinos@gmail.com** → **Novo projeto**.
+3. Apague o conteúdo do editor, cole todo o arquivo `sugestoes-apps-script.gs` e salve (ícone de disquete).
+4. **Implantar → Nova implantação** → no ícone de engrenagem, escolha **App da Web**:
+   - Executar como: **Eu**
+   - Quem pode acessar: **Qualquer pessoa**
+   → **Implantar** → **Autorizar acesso** → escolha a conta. Se aparecer "O Google não verificou este app", clique em **Avançado → Acessar (não seguro)**: o app é o seu próprio script.
+5. Copie o **URL do app da Web** (termina em `/exec`) e cole em `SUGESTOES_URL` no `config.js` → publique o `config.js`.
+O e-mail chega com o texto, o tipo, a versão e o aparelho; **Responder** vai direto para o usuário. Limite: 50 e-mails por dia (configurável no script).

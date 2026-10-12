@@ -36,3 +36,6 @@ export const DIAS_TESTE = 7;
 // WhatsApp de suporte com DDI+DDD, só números (ex.: 5511999998888). Vazio = esconde o botão.
 export const SUPORTE_WHATSAPP = "5519982278392";
 export const SUPORTE_EMAIL = "hypertreinos@gmail.com";
+// Endereço do Apps Script que envia as sugestões por e-mail (passo a passo no LEIA-ME, seção "Sugestões").
+// Vazio = as sugestões só aparecem na tela Admin.
+export const SUGESTOES_URL = "";

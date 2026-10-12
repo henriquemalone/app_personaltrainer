@@ -1,10 +1,10 @@
 // ================================================================
 //  Treino v2 — PWA + Firebase (Auth, Firestore offline, AI Logic)
 // ================================================================
-export const VERSAO_APP = '2.9.0';
+export const VERSAO_APP = '2.10.0';
 const FB = 'https://www.gstatic.com/firebasejs/12.19.0/';
 
-import { firebaseConfig, RECAPTCHA_SITE_KEY, IA_PROVEDOR, MODELO_IA, YOUTUBE_API_KEY, ADMIN_EMAIL, LINK_ASSINATURA, PRECO_TXT, DIAS_TESTE, SUPORTE_WHATSAPP, SUPORTE_EMAIL } from './config.js';
+import { firebaseConfig, RECAPTCHA_SITE_KEY, IA_PROVEDOR, MODELO_IA, YOUTUBE_API_KEY, ADMIN_EMAIL, LINK_ASSINATURA, PRECO_TXT, DIAS_TESTE, SUPORTE_WHATSAPP, SUPORTE_EMAIL, SUGESTOES_URL } from './config.js';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword,
   sendPasswordResetEmail, signOut, updateProfile, deleteUser, reauthenticateWithCredential, EmailAuthProvider } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js';
@@ -27,6 +27,26 @@ const fmtData = v => new Date(v + 'T00:00').toLocaleDateString('pt-BR', {day:'2-
 const fmtDH = t => new Date(t).toLocaleDateString('pt-BR', {weekday:'short', day:'2-digit', month:'short'});
 const repsBase = r => parseInt(String(r).match(/\d+/)?.[0] || '10', 10);
 const mmss = s => `${pad(Math.floor(s / 60))}:${pad(s % 60)}`;
+const fmtDur = s => s >= 3600 ? `${Math.floor(s / 3600)}:${pad(Math.floor(s / 60) % 60)}:${pad(s % 60)}` : mmss(s);
+
+// ================= Tema (claro / escuro / automático) =================
+const mqClaro = window.matchMedia ? matchMedia('(prefers-color-scheme: light)') : null;
+let temaAtual = (() => { try { return localStorage.getItem('hf_tema') || 'auto'; } catch (e) { return 'auto'; } })();
+function aplicarTema(t) {
+  temaAtual = ['auto', 'light', 'dark'].includes(t) ? t : 'auto';
+  try { localStorage.setItem('hf_tema', temaAtual); } catch (e) {}
+  const claro = temaAtual === 'light' || (temaAtual === 'auto' && !!mqClaro?.matches);
+  document.documentElement.setAttribute('data-theme', claro ? 'light' : 'dark');
+  document.querySelector('meta[name=theme-color]')?.setAttribute('content', claro ? '#f3f4f6' : '#0e0f11');
+}
+mqClaro?.addEventListener?.('change', () => { if (temaAtual === 'auto') aplicarTema('auto'); });
+
+// Ao tocar num campo numérico (kg, reps, medidas), seleciona o valor inteiro: é só digitar o novo
+document.addEventListener('focusin', e => {
+  const t = e.target;
+  if (t.tagName !== 'INPUT' || !/decimal|numeric/.test(t.inputMode || '') || !t.value) return;
+  setTimeout(() => { try { if (document.activeElement === t) t.setSelectionRange(0, t.value.length); } catch (x) {} }, 40);
+});
 const clone = o => JSON.parse(JSON.stringify(o));
 function toast(m, ms = 2800) { const t = $('toast'); t.textContent = m; t.style.display = 'block'; clearTimeout(t._h); t._h = setTimeout(() => t.style.display = 'none', ms); }
 const standalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
@@ -49,7 +69,7 @@ if (configurado) {
 }
 
 // ================= Estado =================
-const cfgPadrao = () => ({ backupDias: 14, ultimoBackup: null, avisoVisto: null, migrado: false });
+const cfgPadrao = () => ({ backupDias: 14, ultimoBackup: null, avisoVisto: null, migrado: false, tema: null });
 const S = { user: null, perfil: { cfg: cfgPadrao() }, fichas: [], sessoes: [], avaliacoes: [], plano: null, diario: [], acesso: null, ativo: null, pronto: { fichas: false, sessoes: false, perfil: false, ativo: false, avaliacoes: false, plano: false, diario: false, acesso: false } };
 let unsubs = [];
 const uref = (...p) => doc(db, 'users', S.user.uid, ...p);
@@ -73,7 +93,9 @@ function escutar() {
   unsubs.forEach(u => u()); unsubs = [];
   unsubs.push(onSnapshot(uref(), d => {
     if (!d.exists()) setDoc(uref(), { cfg: cfgPadrao(), nome: S.user.displayName || '', criadoEm: Date.now() }, { merge: true }).catch(falhou);
-    const v = d.data() || {}; S.perfil = { ...v, cfg: { ...cfgPadrao(), ...(v.cfg || {}) } }; S.pronto.perfil = true; aoMudar('perfil');
+    const v = d.data() || {}; S.perfil = { ...v, cfg: { ...cfgPadrao(), ...(v.cfg || {}) } };
+    if (S.perfil.cfg.tema && S.perfil.cfg.tema !== temaAtual) aplicarTema(S.perfil.cfg.tema); // tema salvo na conta vale em todos os aparelhos
+    S.pronto.perfil = true; aoMudar('perfil');
   }, erroEscuta));
   unsubs.push(onSnapshot(ucol('fichas'), qs => {
     S.fichas = qs.docs.map(d => d.data()).sort((a, b) => String(a.letra).localeCompare(String(b.letra)));
@@ -336,7 +358,7 @@ function vAuth() {
       <label class="f">E-mail</label><input class="in" id="aEmail" type="email" autocomplete="email" required>
       ${modoAuth === 'criar' ? '' : ''}${modoAuth !== 'senha' ? `<label class="f">Senha</label><input class="in" id="aSenha" type="password" minlength="6" autocomplete="${modoAuth === 'criar' ? 'new-password' : 'current-password'}" required>` : ''}
       ${modoAuth === 'criar' ? `<label class="row left" style="gap:10px;font-size:13px;margin-top:14px;align-items:flex-start;color:var(--mut)"><input type="checkbox" id="aAceite" required style="width:20px;height:20px;flex-shrink:0;margin-top:1px">
-        <span>Li e aceito os <a href="termos.html" target="_blank" style="color:var(--ac)">Termos de Uso</a> e a <a href="privacidade.html" target="_blank" style="color:var(--ac)">Política de Privacidade</a>, tenho 18 anos ou mais e consinto com o tratamento dos meus dados de saúde (treino, medidas e alimentação).</span></label>
+        <span>Li e aceito os <a href="termos.html" target="_blank" style="color:var(--act)">Termos de Uso</a> e a <a href="privacidade.html" target="_blank" style="color:var(--act)">Política de Privacidade</a>, tenho 18 anos ou mais e consinto com o tratamento dos meus dados de saúde (treino, medidas e alimentação).</span></label>
         <div class="mut" style="font-size:12px;margin-top:8px">🎁 ${DIAS_TESTE} dias grátis, sem cartão. Depois, ${esc(PRECO_TXT)}.</div>` : ''}
       <button class="btn" id="aBtn" style="margin-top:18px">${modoAuth === 'criar' ? 'Criar conta' : modoAuth === 'senha' ? 'Enviar e-mail de recuperação' : 'Entrar'}</button>
     </form>
@@ -633,7 +655,7 @@ function vTreino() {
   if (T.passo >= P.length) return vFimTreino();
   const g = P[T.passo];
   const totalS = T.itens.reduce((a, e) => a + e.sets.length, 0), feitas = T.itens.reduce((a, e) => a + e.sets.filter(s => s.done).length, 0);
-  let h = `<div class="ttop"><button onclick="A.go('fichas')" aria-label="Minimizar">⌄</button><div><b>Treino ${esc(T.letra)} · ${esc(T.nome)}</b><small id="tClock"></small></div><button onclick="A.listaPassos()" aria-label="Exercícios">☰</button></div>
+  let h = `<div class="ttop"><button onclick="A.go('fichas')" aria-label="Minimizar">⌄</button><div><b>Treino ${esc(T.letra)} · ${esc(T.nome)}</b><span class="clock" aria-label="Tempo de treino"><i></i><span id="tClock"></span></span><small id="tInfo"></small></div><button onclick="A.listaPassos()" aria-label="Exercícios">☰</button></div>
     <div class="tprog"><i style="width:${totalS ? feitas / totalS * 100 : 0}%"></i></div>`;
   if (g.length === 1) {
     const i = g[0], e = T.itens[i];
@@ -642,6 +664,7 @@ function vTreino() {
     h += `<div class="combo"><div class="rows">${g.map((i, k) => { const e = T.itens[i]; return `<div class="r" onclick="A.abrirExercicio(${i})">${thumbHTML(e.videoId, LET[k], COR[k])}
       <div style="flex:1;min-width:0"><div class="mut" style="font-size:12px">${T.passo + 1} / ${P.length}</div><h3>${esc(e.nome)}</h3></div><span class="info">ⓘ</span></div>`; }).join('')}</div><div class="side">${g.length === 2 ? 'BI-SET' : 'TRI-SET'}</div></div>`;
   }
+  h += `<div class="tacts${P.length > 1 ? '' : ' um'}"><button onclick="A.trocarAtual()"><span>⇄</span>Trocar exercício</button>${P.length > 1 ? `<button onclick="A.pularOuProximo()"><span>⏭</span>${passoFeito(g) ? 'Próximo' : 'Pular / próximo'}</button>` : ''}</div>`;
   const notas = g.filter(i => T.itens[i].obs);
   if (notas.length) h += `<div class="notes"><small>Notas do treino</small>${notas.map(i => `${g.length > 1 ? `<b>${esc(T.itens[i].nome)}:</b> ` : ''}${esc(T.itens[i].obs)}`).join('<br>')}</div>`;
   h += `<div class="tabs"><button class="${abaT === 0 ? 'on' : ''}" onclick="A.abaT(0)">Séries</button><button class="${abaT === 1 ? 'on' : ''}" onclick="A.abaT(1)">Comentários</button></div>`;
@@ -672,7 +695,8 @@ function atualizarBotaoTreino() {
   if (passoFeito(g)) { const resta = P.some((x, k) => k !== T.passo && !passoFeito(x)); b.textContent = resta ? 'Próximo exercício →' : 'Finalizar treino ✓'; b.className = 'btn tnext'; }
   else { b.textContent = `Registrar série ${rodadaAtual(g) + 1}${g.length > 1 ? ' (' + g.map((_, k) => LET[k]).join(' + ') + ')' : ''}`; b.className = 'btn'; }
 }
-function relogio() { const el = $('tClock'); if (el && S.ativo) { const P = passos(); el.textContent = `${mmss(Math.floor((Date.now() - S.ativo.inicio) / 1000))} · exercício ${Math.min(S.ativo.passo + 1, P.length)} de ${P.length}`; } }
+function relogio() { const el = $('tClock'); if (el && S.ativo) { const P = passos(); el.textContent = fmtDur(Math.floor((Date.now() - S.ativo.inicio) / 1000));
+  const inf = $('tInfo'); if (inf) inf.textContent = S.ativo.passo >= P.length ? 'todos os exercícios' : `exercício ${S.ativo.passo + 1} de ${P.length}`; } }
 setInterval(() => { if (rota === 'treino' && S.ativo) relogio(); }, 1000);
 function acaoTreino() {
   destravarAudio();
@@ -681,12 +705,15 @@ function acaoTreino() {
   const g = P[T.passo];
   if (passoFeito(g)) return proximoPasso();
   const j = rodadaAtual(g); g.forEach(i => { const s = T.itens[i].sets[j]; if (s) s.done = true; });
-  if (passoFeito(g)) { stopT(); toast(P.some(x => !passoFeito(x)) ? 'Exercício concluído! 💪' : 'Todas as séries concluídas! 💪'); }
-  else { const d = Math.max(...g.map(i => T.itens[i].descanso || 0)); if (d > 0) startT(d); }
+  const d = Math.max(...g.map(i => T.itens[i].descanso || 0));
+  if (passoFeito(g)) {
+    if (P.some(x => !passoFeito(x))) { if (d > 0) startT(d); toast('Exercício concluído! 💪 Descansando…'); } // descanso também entre exercícios
+    else { stopT(); toast('Todas as séries concluídas! 💪'); }
+  } else if (d > 0) startT(d);
   salvarAtivo(); keepScroll(vTreino);
 }
 function proximoPasso() {
-  const T = S.ativo, P = passos(); stopT(); abaT = 0;
+  const T = S.ativo, P = passos(); abaT = 0; // o descanso continua contando no próximo exercício
   T.pulados = (T.pulados || []).filter(k => k !== T.passo);
   let n = P.findIndex((g, k) => k > T.passo && !passoFeito(g) && !T.pulados.includes(k));
   if (n < 0) n = P.findIndex(g => !passoFeito(g)); // volta aos pulados
@@ -723,8 +750,15 @@ function menuTreino() {
     <div class="mi" onclick="A.closeModal();A.finalizar()"><span>✓</span>Encerrar treino e salvar</div>
     <div class="mi bad" onclick="A.closeModal();A.descartar()"><span>🗑</span>Descartar treino</div>`);
 }
+function trocarAtual() {
+  const T = S.ativo, g = passos()[T.passo]; if (!g) return;
+  if (g.length === 1) return abrirSubs(g[0]);
+  openModal(`<h2>Trocar qual exercício?</h2>${g.map((i, k) => `<div class="mi" onclick="A.closeModal();A.abrirSubs(${i})"><span class="badge" style="position:static;background:${COR[k]}">${LET[k]}</span>${esc(T.itens[i].nome)}</div>`).join('')}
+    <button class="btn ghost" style="margin-top:14px" onclick="A.closeModal()">Cancelar</button>`);
+}
+function pularOuProximo() { const g = passos()[S.ativo.passo]; if (g && passoFeito(g)) proximoPasso(); else pularPasso(); }
 function pularPasso() {
-  closeModal(); const T = S.ativo, P = passos(); stopT(); abaT = 0;
+  closeModal(); const T = S.ativo, P = passos(); abaT = 0;
   T.pulados = [...new Set([...(T.pulados || []), T.passo])];
   let n = P.findIndex((g, k) => k > T.passo && !passoFeito(g) && !T.pulados.includes(k));
   if (n < 0) n = P.findIndex((g, k) => k !== T.passo && !passoFeito(g));
@@ -738,14 +772,15 @@ function listaPassos() {
       <div class="mut" style="font-size:12px">${st === 'done' ? 'Concluído' : st === 'skip' ? 'Pulado' : st === 'cur' ? 'Em andamento' : esc(resumoSeries(T.itens[g[0]].meta))}</div></div></div>`; }).join('')
     + `<button class="btn ghost" style="margin-top:14px" onclick="A.closeModal()">Fechar</button>`);
 }
-function irPasso(k) { closeModal(); stopT(); abaT = 0; S.ativo.passo = k; salvarAtivo(); go('treino'); }
+function irPasso(k) { closeModal(); abaT = 0; S.ativo.passo = k; salvarAtivo(); go('treino'); }
 function vFimTreino() {
   const T = S.ativo, P = passos(); const pend = P.filter(g => !passoFeito(g)).length;
   const tot = T.itens.reduce((a, e) => a + e.sets.length, 0), f = T.itens.reduce((a, e) => a + e.sets.filter(s => s.done).length, 0);
-  $('view').innerHTML = `<div class="ttop"><button onclick="A.go('fichas')">⌄</button><div><b>Treino ${esc(T.letra)} · ${esc(T.nome)}</b><small id="tClock"></small></div><button onclick="A.listaPassos()">☰</button></div>
+  $('view').innerHTML = `<div class="ttop"><button onclick="A.go('fichas')">⌄</button><div><b>Treino ${esc(T.letra)} · ${esc(T.nome)}</b><span class="clock"><i></i><span id="tClock"></span></span><small id="tInfo"></small></div><button onclick="A.listaPassos()">☰</button></div>
     <div class="empty" style="padding-top:50px"><div style="font-size:44px">💪</div><b style="font-size:22px;margin:10px 0">Treino concluído!</b>
-    ${mmss(Math.floor((Date.now() - T.inicio) / 1000))} · ${f} de ${tot} séries${pend ? ` · ${pend} exercício${pend > 1 ? 's' : ''} não feito${pend > 1 ? 's' : ''}` : ''}</div>
-    ${pend ? `<button class="btn ghost" onclick="A.irPasso(${P.findIndex(g => !passoFeito(g))})">Voltar aos pendentes</button>` : ''}`;
+    ${fmtDur(Math.floor((Date.now() - T.inicio) / 1000))} · ${f} de ${tot} séries${pend ? ` · ${pend} exercício${pend > 1 ? 's' : ''} não feito${pend > 1 ? 's' : ''}` : ''}</div>
+    ${pend ? `<button class="btn ghost" onclick="A.irPasso(${P.findIndex(g => !passoFeito(g))})">Voltar aos pendentes</button>` : ''}
+    <div style="text-align:center;margin-top:18px"><button class="link" onclick="A.sugerir()">Algo podia ser melhor? <u>Sugira</u></button></div>`;
   atualizarBotaoTreino(); relogio();
 }
 function finalizar() {
@@ -912,7 +947,7 @@ function renderExercicio(soCorpo) {
       : `<div class="mut">${navigator.onLine ? '<span class="spin"></span>Gerando dicas…' : 'Sem internet para gerar as dicas.'}</div>`;
   } else {
     const subs = e.subs?.length ? e.subs : (c.subs || []);
-    h = c.principais ? `<b>Principais</b><div style="margin:6px 0 12px">${c.principais.map(m => `<span class="chip" style="background:#c6f43222;color:var(--ac);margin:2px">${esc(m)}</span>`).join('')}</div>
+    h = c.principais ? `<b>Principais</b><div style="margin:6px 0 12px">${c.principais.map(m => `<span class="chip" style="background:#c6f43222;color:var(--act);margin:2px">${esc(m)}</span>`).join('')}</div>
       ${c.secundarios?.length ? `<b>Secundários</b><div style="margin-top:6px">${c.secundarios.map(m => `<span class="chip" style="margin:2px">${esc(m)}</span>`).join('')}</div>` : ''}`
       : `<div class="mut">${navigator.onLine ? '<span class="spin"></span>Carregando…' : 'Sem internet.'}</div>`;
     if (subs.length) h += `<div class="mut" style="margin-top:16px">Substitutos: ${subs.map(esc).join(' · ')}</div>`;
@@ -976,12 +1011,12 @@ function grafico() {
   const x = i => p + i * (W - p - 12) / (dd.length - 1), y = v => H - 22 - (v - mn) / (mx - mn) * (H - 40);
   const dm = t => new Date(t).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
   el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Carga máxima de ${esc(exSel)}">
-    ${[0, .5, 1].map(t => { const v = mn + t * (mx - mn); return `<line x1="${p}" x2="${W - 12}" y1="${y(v)}" y2="${y(v)}" stroke="#2a2e33"/><text x="0" y="${y(v) + 4}" fill="#8b929b" font-size="10">${Math.round(v)}</text>`; }).join('')}
-    <polyline points="${dd.map((v, i) => `${x(i)},${y(v)}`).join(' ')}" fill="none" stroke="#c6f432" stroke-width="2.5" stroke-linejoin="round"/>
-    ${dd.map((v, i) => `<circle cx="${x(i)}" cy="${y(v)}" r="3.5" fill="#0e0f11" stroke="#c6f432" stroke-width="2"/>`).join('')}
-    <text x="${x(dd.length - 1)}" y="${y(dd.at(-1)) - 10}" fill="#f2f3f5" font-size="11" text-anchor="end">${fmtKg(dd.at(-1))} kg</text>
-    <text x="${p}" y="${H - 4}" fill="#8b929b" font-size="10">${dm(pts[0].t)}</text>
-    <text x="${W - 12}" y="${H - 4}" fill="#8b929b" font-size="10" text-anchor="end">${dm(pts.at(-1).t)}</text></svg>
+    ${[0, .5, 1].map(t => { const v = mn + t * (mx - mn); return `<line x1="${p}" x2="${W - 12}" y1="${y(v)}" y2="${y(v)}" style="stroke:var(--line)"/><text x="0" y="${y(v) + 4}" style="fill:var(--mut)" font-size="10">${Math.round(v)}</text>`; }).join('')}
+    <polyline points="${dd.map((v, i) => `${x(i)},${y(v)}`).join(' ')}" fill="none" style="stroke:var(--act)" stroke-width="2.5" stroke-linejoin="round"/>
+    ${dd.map((v, i) => `<circle cx="${x(i)}" cy="${y(v)}" r="3.5" style="fill:var(--bg);stroke:var(--act)" stroke-width="2"/>`).join('')}
+    <text x="${x(dd.length - 1)}" y="${y(dd.at(-1)) - 10}" style="fill:var(--tx)" font-size="11" text-anchor="end">${fmtKg(dd.at(-1))} kg</text>
+    <text x="${p}" y="${H - 4}" style="fill:var(--mut)" font-size="10">${dm(pts[0].t)}</text>
+    <text x="${W - 12}" y="${H - 4}" style="fill:var(--mut)" font-size="10" text-anchor="end">${dm(pts.at(-1).t)}</text></svg>
     <div class="mut">${(() => { const v = dd.at(-1) - dd[0]; return (v >= 0 ? '+' : '') + fmtKg(v) + ' kg'; })()} nos últimos ${dd.length} treinos</div>`;
 }
 
@@ -992,6 +1027,8 @@ function vAjustes() {
   const ult = c.ultimoBackup ? new Date(c.ultimoBackup).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : 'nunca';
   const notif = 'Notification' in window ? Notification.permission : 'indisponível';
   $('view').innerHTML = `
+  <div class="card"><b>Aparência</b><div class="seg" style="margin:10px 0 6px">${[['auto', 'Automático'], ['light', 'Claro'], ['dark', 'Escuro']].map(([k, t]) => `<button class="${temaAtual === k ? 'on' : ''}" onclick="A.setTema('${k}')">${t}</button>`).join('')}</div>
+    <div class="mut" style="font-size:12px">Automático segue o tema do celular.</div></div>
   <div class="card"><b>Conta</b><div class="mut" style="margin:6px 0 12px">${esc(S.user.displayName || '')}<br>${esc(S.user.email)}</div>
     <button class="btn ghost" onclick="A.sair()">Sair da conta</button></div>
   <div class="card"><b>Perfil (para os cálculos de medidas)</b>
@@ -1003,6 +1040,7 @@ function vAjustes() {
   <div class="card"><div class="row"><div><b>Assinatura</b><div class="mut" style="margin-top:4px">${esc(statusAcesso().txt)}</div></div><button class="btn sm" onclick="A.go('assinar')">${statusAcesso().tipo === 'vitalicio' || statusAcesso().tipo === 'admin' ? 'Ver' : 'Assinar'}</button></div>
     ${ehAdmin() ? `<button class="btn" style="margin-top:12px" onclick="A.go('admin')">⚙ Admin: liberar acessos</button>` : ''}</div>
   <div class="card"><b>Ajuda</b><div class="btns" style="margin-top:10px">
+    <button class="btn sm" onclick="A.sugerir()">💡 Sugerir melhoria</button>
     ${linkWhats("Olá! Preciso de ajuda com o Hyper Fit. Meu e-mail: " + S.user.email) ? `<a class="btn sm" href="${esc(linkWhats("Olá! Preciso de ajuda com o Hyper Fit. Meu e-mail: " + S.user.email))}" target="_blank" rel="noopener">💬 Falar com o suporte</a>` : ''}
     <button class="btn sm ghost" onclick="A.guiaInstalacao()">📲 Como instalar</button>
     <a class="btn sm ghost" href="termos.html" target="_blank">Termos de uso</a><a class="btn sm ghost" href="privacidade.html" target="_blank">Privacidade</a></div></div>
@@ -1141,12 +1179,12 @@ function linhaSVG(d, u, labels, casas = 1) {
   const x = i => p + i * (W - p - 14) / Math.max(1, d.length - 1), y = v => H - 22 - (v - lo) / (hi - lo) * (H - 40);
   const f = v => (Math.round(v * 10 ** casas) / 10 ** casas).toString().replace('.', ',');
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="margin-top:10px">
-    ${[0, .5, 1].map(t => { const v = lo + t * (hi - lo); return `<line x1="${p}" x2="${W - 14}" y1="${y(v)}" y2="${y(v)}" stroke="#2a2e33"/><text x="0" y="${y(v) + 4}" fill="#8b929b" font-size="10">${f(v)}</text>`; }).join('')}
-    <polyline points="${d.map((v, i) => `${x(i)},${y(v)}`).join(' ')}" fill="none" stroke="#c6f432" stroke-width="2.5" stroke-linejoin="round"/>
-    ${d.map((v, i) => `<circle cx="${x(i)}" cy="${y(v)}" r="3.5" fill="#0e0f11" stroke="#c6f432" stroke-width="2"/>`).join('')}
-    <text x="${x(d.length - 1)}" y="${y(d.at(-1)) - 10}" fill="#f2f3f5" font-size="11" text-anchor="end">${f(d.at(-1))} ${esc(u)}</text>
-    ${labels.length <= 8 ? labels.map((l, i) => `<text x="${x(i)}" y="${H - 4}" fill="#8b929b" font-size="10" text-anchor="middle">${l}</text>`).join('')
-      : `<text x="${p}" y="${H - 4}" fill="#8b929b" font-size="10">${labels[0]}</text><text x="${W - 14}" y="${H - 4}" fill="#8b929b" font-size="10" text-anchor="end">${labels.at(-1)}</text>`}</svg>`;
+    ${[0, .5, 1].map(t => { const v = lo + t * (hi - lo); return `<line x1="${p}" x2="${W - 14}" y1="${y(v)}" y2="${y(v)}" style="stroke:var(--line)"/><text x="0" y="${y(v) + 4}" style="fill:var(--mut)" font-size="10">${f(v)}</text>`; }).join('')}
+    <polyline points="${d.map((v, i) => `${x(i)},${y(v)}`).join(' ')}" fill="none" style="stroke:var(--act)" stroke-width="2.5" stroke-linejoin="round"/>
+    ${d.map((v, i) => `<circle cx="${x(i)}" cy="${y(v)}" r="3.5" style="fill:var(--bg);stroke:var(--act)" stroke-width="2"/>`).join('')}
+    <text x="${x(d.length - 1)}" y="${y(d.at(-1)) - 10}" style="fill:var(--tx)" font-size="11" text-anchor="end">${f(d.at(-1))} ${esc(u)}</text>
+    ${labels.length <= 8 ? labels.map((l, i) => `<text x="${x(i)}" y="${H - 4}" style="fill:var(--mut)" font-size="10" text-anchor="middle">${l}</text>`).join('')
+      : `<text x="${p}" y="${H - 4}" style="fill:var(--mut)" font-size="10">${labels[0]}</text><text x="${W - 14}" y="${H - 4}" style="fill:var(--mut)" font-size="10" text-anchor="end">${labels.at(-1)}</text>`}</svg>`;
 }
 let abaMed = 'resumo', medSel = 'bf', cmpA = null, cmpB = null, rascAv = null;
 const avs = () => S.avaliacoes.map(derivar); // ordenadas por data (asc)
@@ -1320,7 +1358,7 @@ function salvarDia(D) {
 }
 const statusPlano = () => plano()?.validade ? statusValidade(plano()) : null;
 function anel(v, max) { const r = 42, c = 2 * Math.PI * r, f = max ? Math.min(v / max, 1) : 0;
-  return `<svg viewBox="0 0 96 96" width="96" height="96"><circle cx="48" cy="48" r="${r}" fill="none" stroke="#1f2226" stroke-width="9"/><circle cx="48" cy="48" r="${r}" fill="none" stroke="${v > max * 1.08 ? '#ffb020' : '#c6f432'}" stroke-width="9" stroke-linecap="round" stroke-dasharray="${c * f} ${c}" transform="rotate(-90 48 48)"/></svg>`; }
+  return `<svg viewBox="0 0 96 96" width="96" height="96"><circle cx="48" cy="48" r="${r}" fill="none" style="stroke:var(--card2)" stroke-width="9"/><circle cx="48" cy="48" r="${r}" fill="none" style="stroke:${v > max * 1.08 ? 'var(--warn)' : 'var(--act)'}" stroke-width="9" stroke-linecap="round" stroke-dasharray="${c * f} ${c}" transform="rotate(-90 48 48)"/></svg>`; }
 function vDieta() {
   const P = plano(); if (!diaSel) diaSel = hoje();
   const st = statusPlano();
@@ -1358,7 +1396,7 @@ function vDieta() {
       ${st ? `<div style="margin-top:10px"><span class="chip ${st.cls}">${st.txt}</span></div>` : ''}</div>
       <div class="card"><b>Metas diárias</b><div class="mut" style="margin-top:6px;line-height:1.7">${r0(M.kcal)} kcal · Proteína ${r0(M.p)} g · Carboidrato ${r0(M.c)} g · Gordura ${r0(M.g)} g · Água ${fmtKg(metaAguaL())} L</div></div>
       ${P.refeicoes.map(rf => `<div class="card"><div class="row"><b>${esc(rf.h ? rf.h + ' · ' : '')}${esc(rf.n)}</b><span class="mut">${somaMac(rf.itens).kcal} kcal</span></div>
-        <div class="mut" style="margin-top:6px;line-height:1.6">${rf.itens.map(it => `${esc(it.nome)} (${esc(fmtQtd(it))})${it.subs?.length ? ` <span style="color:var(--ac)">· ${it.subs.length} subst.</span>` : ''}`).join('<br>')}</div></div>`).join('')}
+        <div class="mut" style="margin-top:6px;line-height:1.6">${rf.itens.map(it => `${esc(it.nome)} (${esc(fmtQtd(it))})${it.subs?.length ? ` <span style="color:var(--act)">· ${it.subs.length} subst.</span>` : ''}`).join('<br>')}</div></div>`).join('')}
       <div class="btns"><button class="btn" style="flex:1" onclick="A.go('dietaTexto')">✨ Novo plano por texto</button><button class="btn ghost" style="flex:1" onclick="A.editarPlano()">✎ Editar</button></div>`;
   } else {
     const dias = Array.from({ length: 14 }, (_, k) => { const d = new Date(); d.setDate(d.getDate() - 13 + k); return ymd(d); });
@@ -1568,7 +1606,7 @@ function vAssinar() {
   const aviso = linkWhats(`Olá! Fiz a assinatura do Hyper Fit. Meu e-mail de cadastro é ${S.user.email}`);
   $('view').innerHTML = `<div class="card" style="text-align:center;padding:22px 16px">
       <div style="font-size:40px">💪</div><b style="font-size:20px;display:block;margin:6px 0">Hyper Fit</b><div class="mut" style="margin-bottom:4px">Treino, dieta e evolução em um só app</div>
-      <div style="font-size:30px;font-weight:800;color:var(--ac);margin:10px 0 2px">${esc(PRECO_TXT)}</div><div class="mut">preço de lançamento · cancele quando quiser</div></div>
+      <div style="font-size:30px;font-weight:800;color:var(--act);margin:10px 0 2px">${esc(PRECO_TXT)}</div><div class="mut">preço de lançamento · cancele quando quiser</div></div>
     <div class="card"><div style="line-height:1.9;font-size:14px">✅ Cole o treino ou a dieta do seu profissional e a IA monta tudo<br>✅ Treino guiado com timer de descanso, bi-sets e vídeos<br>✅ Plano alimentar com metas, água e trocas<br>✅ Medidas corporais e gráficos de evolução<br>✅ Seus dados na nuvem, em qualquer celular</div></div>
     ${s.tipo === 'assinante' || s.tipo === 'vitalicio' || s.tipo === 'admin' ? `<div class="banner info"><b>✅ ${s.txt}</b>Obrigado por apoiar o app!</div>` : ''}
     <a class="btn" href="${esc(LINK_ASSINATURA)}" target="_blank" rel="noopener">Assinar com Mercado Pago</a>
@@ -1581,12 +1619,15 @@ function vAssinar() {
 }
 // ---------- Admin: liberar acessos ----------
 let adminLista = null;
+let adminSug = null;
 async function carregarAdmin() {
   try {
     const [us, ac] = await Promise.all([getDocs(query(collection(db, 'users'), orderBy('ultimoAcesso', 'desc'), limit(100))), getDocs(collection(db, 'acessos'))]);
     const acs = {}; ac.docs.forEach(d => acs[d.id] = d.data());
     adminLista = us.docs.map(d => ({ uid: d.id, ...d.data(), acesso: acs[d.id] || null }));
   } catch (e) { adminLista = []; toast('Sem permissão de admin: confira ADMIN_EMAIL e as regras do Firestore', 6000); }
+  try { const sg = await getDocs(query(collection(db, 'sugestoes'), orderBy('em', 'desc'), limit(30))); adminSug = sg.docs.map(d => d.data()); }
+  catch (e) { adminSug = null; }
   if (rota === 'admin') vAdmin();
 }
 function statusDe(u) {
@@ -1609,6 +1650,9 @@ function vAdmin() {
       <label class="f">Tipo</label><select class="in" id="admTipo" style="max-width:100%"><option value="1">Assinante · 1 mês</option><option value="3">Assinante · 3 meses</option><option value="12">Assinante · 12 meses</option><option value="v">Vitalício</option><option value="x">Remover acesso</option></select>
       <button class="btn" style="margin-top:12px" onclick="A.admLiberar()">Salvar</button>
       <div class="mut" style="font-size:12px;margin-top:8px">Renovação: escolha 1 mês de novo — o prazo soma a partir da data atual de vencimento.</div></div>
+    <div class="card"><b>Sugestões recebidas</b>${adminSug === null ? `<div class="mut" style="margin-top:6px">Publique as regras novas do Firestore (firestore.rules) para ver as sugestões aqui.</div>`
+      : !adminSug.length ? `<div class="mut" style="margin-top:6px">Nenhuma ainda.</div>` : adminSug.map(x => `<div class="sess" style="cursor:default"><div class="row"><span class="chip">${esc(x.tipo || '')}</span><span class="mut" style="font-size:12px">${fmtDH(x.em)}</span></div>
+        <div style="margin:6px 0 4px;white-space:pre-wrap;font-size:14px">${esc(x.texto)}</div><div class="mut" style="font-size:12px">${esc(x.nome || '')} · <a href="mailto:${esc(x.email)}" style="color:var(--act)">${esc(x.email)}</a> · v${esc(x.versao || '')}</div></div>`).join('')}</div>
     <div class="card"><b>Cadastros por origem</b><table class="cmp" style="margin-top:6px"><tr><th>Origem</th><th>Cadastros</th><th>Pagos</th></tr>
       ${Object.entries(porOrigem).sort((a, b) => b[1].c - a[1].c).map(([k, v]) => `<tr><td>${esc(k)}</td><td>${v.c}</td><td>${v.p}</td></tr>`).join('')}</table></div>
     <div class="card"><div class="row"><b>Usuários recentes</b><button class="link ac" onclick="A.admRecarregar()">Atualizar</button></div>
@@ -1629,11 +1673,35 @@ async function admLiberar() {
     toast('Acesso atualizado'); adminLista = null; vAdmin();
   } catch (e) { toast('Erro: ' + (e.code || e.message), 5000); }
 }
+// ---------- Sugestões de melhoria ----------
+let sugTipo = 'Ideia';
+function sugerir() {
+  sugTipo = 'Ideia';
+  openModal(`<h2>💡 Sugerir melhoria</h2><div class="mut">O que poderia ser melhor no Hyper Fit? A sugestão vai direto para quem desenvolve o app.</div>
+    <textarea class="in" id="sugTxt" maxlength="2000" style="min-height:130px;margin-top:12px" placeholder="Escreva sua ideia, problema ou elogio…"></textarea>
+    <div class="tipos" id="sugTipos">${['Ideia', 'Problema', 'Outro'].map(t => `<button class="${t === sugTipo ? 'on' : ''}" onclick="A.sugTipo('${t}')">${t}</button>`).join('')}</div>
+    <div class="mut" style="font-size:12px;margin-bottom:12px">Junto vão seu e-mail (para podermos responder), a versão do app e o modelo do celular.</div>
+    <button class="btn" id="sugBtn" onclick="A.enviarSugestao()">Enviar sugestão</button>
+    <button class="btn ghost" style="margin-top:8px" onclick="A.closeModal()">Cancelar</button>`);
+}
+function setSugTipo(t) { sugTipo = t; document.querySelectorAll('#sugTipos button').forEach(b => b.classList.toggle('on', b.textContent === t)); }
+function enviarSugestao() {
+  const texto = ($('sugTxt')?.value || '').trim();
+  if (texto.length < 5) return toast('Escreva um pouco mais sobre a sua sugestão');
+  let ult = 0; try { ult = +localStorage.getItem('hf_sug') || 0; } catch (e) {}
+  if (Date.now() - ult < 60e3) return toast('Aguarde 1 minuto para enviar outra sugestão');
+  const sug = { uid: S.user.uid, email: S.user.email || '', nome: S.user.displayName || '', tipo: sugTipo, texto: texto.slice(0, 2000),
+    versao: VERSAO_APP, aparelho: navigator.userAgent.slice(0, 300), em: Date.now() };
+  setDoc(doc(db, 'sugestoes', uid()), sug).catch(e => console.warn('sugestão', e)); // fica no Admin (envia quando houver internet)
+  if (SUGESTOES_URL) fetch(SUGESTOES_URL, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(sug) }).catch(() => {}); // e-mail
+  try { localStorage.setItem('hf_sug', String(Date.now())); } catch (e) {}
+  closeModal(); toast('Sugestão enviada. Obrigado! 🙌', 3500);
+}
 // ---------- Termos (aceite) ----------
 function checarAceite() {
   if (S.perfil.aceite?.versao === VERSAO_TERMOS) return true;
   openModal(`<h2>Termos de uso e privacidade</h2>
-    <div class="mut" style="line-height:1.6;margin-bottom:12px">Para continuar, leia e aceite os <a href="termos.html" target="_blank" style="color:var(--ac)">Termos de Uso</a> e a <a href="privacidade.html" target="_blank" style="color:var(--ac)">Política de Privacidade</a>. O app guarda dados de treino, medidas corporais e alimentação, que são dados de saúde.</div>
+    <div class="mut" style="line-height:1.6;margin-bottom:12px">Para continuar, leia e aceite os <a href="termos.html" target="_blank" style="color:var(--act)">Termos de Uso</a> e a <a href="privacidade.html" target="_blank" style="color:var(--act)">Política de Privacidade</a>. O app guarda dados de treino, medidas corporais e alimentação, que são dados de saúde.</div>
     <label class="row left" style="gap:10px;font-size:14px;align-items:flex-start"><input type="checkbox" id="acCk" style="width:22px;height:22px;flex-shrink:0;margin-top:2px">Li e aceito os Termos e a Política de Privacidade, tenho 18 anos ou mais e consinto com o tratamento dos meus dados de saúde para as funções do app.</label>
     <button class="btn" style="margin-top:14px" onclick="A.aceitarTermos()">Continuar</button>
     <button class="btn ghost" style="margin-top:8px" onclick="A.sair()">Sair</button>`);
@@ -1728,7 +1796,8 @@ window.A = { go, editar, df, d, ds, toggleBi, moverEx, removerEx, addEx, addSeri
   abaDieta: k => { abaDieta = k; refAberta = null; vDieta(); }, mudaDia, agua: aguaClick, abreRef, marcaRef, subsAlimento, trocaAlimento, comiOutra, estimar, registrarExtra, removeExtra, voltarPlano,
   setTextoDieta: v => { textoDieta = v; }, gerarDieta, setDietaImp: (k, v) => { dietaImport[k] = v; }, salvarDietaImport, editarPlano, dp, dm, dr, di, dqn, dun, addItem, remItem, addRef, remRef, metasDosItens, salvarPlanoManual, excluirPlano,
   verExercicio, admLiberar, admUsar, admRecarregar: () => { adminLista = null; vAdmin(); }, aceitarTermos, guiaInstalacao: () => guiaInstalacao(false), instalarAgora, excluirConta, confirmarExclusao,
-  recuperarDoCadastro,
+  recuperarDoCadastro, trocarAtual, pularOuProximo, sugerir, enviarSugestao, sugTipo: setSugTipo,
+  setTema: t => { aplicarTema(t); S.perfil.cfg.tema = t; salvarCfg(); keepScroll(vAjustes); },
   modo: m => { const em = $('aEmail')?.value || ''; modoAuth = m; vAuth(); if (em && $('aEmail')) $('aEmail').value = em; } };
 
 if (!configurado) render();

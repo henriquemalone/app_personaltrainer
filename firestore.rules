@@ -16,6 +16,15 @@ service cloud.firestore {
       allow read: if (request.auth != null && request.auth.uid == uid) || isAdmin();
       allow write: if isAdmin();
     }
+    // Sugestões de melhoria: o usuário logado só cria (com o próprio uid); só o admin lê e apaga
+    match /sugestoes/{id} {
+      allow create: if request.auth != null
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['uid', 'email', 'nome', 'tipo', 'texto', 'versao', 'aparelho', 'em'])
+        && request.resource.data.texto is string && request.resource.data.texto.size() <= 2000
+        && request.resource.data.aparelho is string && request.resource.data.aparelho.size() <= 300;
+      allow read, delete: if isAdmin();
+    }
     // Cada usuário só lê e grava os próprios dados (o admin pode ler a lista de usuários)
     match /users/{uid} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
