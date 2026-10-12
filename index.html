@@ -113,7 +113,11 @@ document.querySelector('meta[name=theme-color]').setAttribute('content',l?'#f3f4
   .opt{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 0;border-bottom:1px solid var(--line)}
   .empty{text-align:center;padding:40px 10px;color:var(--mut)}
   .empty b{display:block;color:var(--tx);font-size:18px;margin-bottom:6px}
-  .toast{position:fixed;left:50%;top:calc(14px + var(--st));transform:translateX(-50%);background:var(--card2);border:1px solid var(--line);padding:10px 16px;border-radius:12px;font-size:14px;z-index:30;display:none;max-width:90vw;text-align:center}
+  .toast{position:fixed;left:50%;top:calc(14px + var(--st));transform:translateX(-50%);background:var(--card);color:var(--tx);border:1px solid var(--line);border-left:5px solid var(--bi);padding:14px 18px;border-radius:14px;font-size:15px;font-weight:600;line-height:1.4;z-index:30;display:none;width:min(92vw,440px);text-align:left;box-shadow:0 12px 34px var(--sombra);animation:tin .22s ease-out}
+  .toast.ok{border-left-color:var(--ok)} .toast.erro{border-left-color:var(--bad);background:#ff5a5a1f}
+  html[data-theme=light] .toast.erro{background:#fdecec}
+  @keyframes tin{from{opacity:0;transform:translate(-50%,-10px)}to{opacity:1;transform:translate(-50%,0)}}
+  #cardBrick select{max-width:none}
   .auth{max-width:400px;margin:20px auto 0}
   .logo{display:flex;align-items:center;gap:12px;margin:10px 0 24px}
   .spin{display:inline-block;width:16px;height:16px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:sp .8s linear infinite;vertical-align:-3px;margin-right:6px}
