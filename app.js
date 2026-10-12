@@ -1,7 +1,7 @@
 // ================================================================
 //  Treino v2 — PWA + Firebase (Auth, Firestore offline, AI Logic)
 // ================================================================
-export const VERSAO_APP = '2.7.0';
+export const VERSAO_APP = '2.8.1';
 const FB = 'https://www.gstatic.com/firebasejs/12.19.0/';
 
 import { firebaseConfig, RECAPTCHA_SITE_KEY, MODELO_IA, YOUTUBE_API_KEY, ADMIN_EMAIL, LINK_ASSINATURA, PRECO_TXT, DIAS_TESTE, SUPORTE_WHATSAPP, SUPORTE_EMAIL } from './config.js';
@@ -117,12 +117,24 @@ async function modeloIA(schema) {
   return aiModelCache[key] = getGenerativeModel(ai, { model: MODELO_IA,
     generationConfig: { responseMimeType: 'application/json', responseJsonSchema: schema, temperature: 0.2 } });
 }
+// Horário local em que a cota diária do Gemini volta (meia-noite no horário do Pacífico)
+function horaResetIA() {
+  try { const agora = new Date(), la = new Date(agora.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
+    const meia = new Date(la); meia.setHours(24, 0, 0, 0);
+    return new Date(agora.getTime() + (meia - la)).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }); } catch (x) { return null; }
+}
 function erroIA(e) {
-  const m = String(e?.message || e);
+  console.error('IA', e);
+  const m = String(e?.message || e), st = Number(e?.customErrorData?.status) || 0;
   if (!navigator.onLine) return 'Sem internet. A IA precisa de conexão.';
-  if (/app.?check|attestation|401|403/i.test(m)) return 'Bloqueado pelo App Check. Confira a chave do reCAPTCHA no config.js e o domínio cadastrado.';
-  if (/429|quota|rate/i.test(m)) return 'Limite gratuito da IA atingido. Tente de novo mais tarde.';
-  return 'Erro na IA: ' + m.slice(0, 160);
+  if (st === 429 || /\b429\b|RESOURCE_EXHAUSTED|quota exceeded/i.test(m)) {
+    const h = horaResetIA();
+    return 'Limite gratuito da IA atingido. Se foi o limite por minuto, tente de novo em 1 minuto' + (h ? `; o limite diário volta às ${h}.` : '.');
+  }
+  if (/app.?check|attestation/i.test(m) || (st === 401 || st === 403)) return 'Bloqueado pelo App Check. Confira a chave do reCAPTCHA no config.js e o domínio cadastrado.';
+  if (st === 503 || /\b503\b|overloaded|UNAVAILABLE/i.test(m)) return 'A IA do Google está sobrecarregada agora. Tente de novo em alguns minutos.';
+  const det = m.replace(/^.*?generateContent:\s*/s, '').replace(/https?:\/\/\S+/g, '').trim();
+  return `Erro na IA${st ? ' (' + st + ')' : e?.code ? ' (' + e.code + ')' : ''}: ${det.slice(0, 180)}`;
 }
 const SCHEMA_SERIE = { type: 'object', properties: { reps: { type: 'string', description: 'Repetições, ex.: "10", "8-12", "falha"' }, kg: { type: 'number', description: 'Carga em kg; omitir se não informada' } }, required: ['reps'] };
 const SCHEMA_IMPORT = { type: 'object', required: ['fichas'], properties: {
@@ -293,6 +305,22 @@ function vNaoConfigurado() {
 
 // ================= Login / cadastro =================
 let modoAuth = 'entrar';
+// Origem do visitante (links de anúncio com UTM): abre em "Criar conta" e guarda a origem para gravar no cadastro
+const ORIGEM = (() => {
+  let o = null;
+  try {
+    const q = new URLSearchParams(location.search), src = q.get('utm_source');
+    if (src || q.has('cadastro')) {
+      o = { source: (src || 'direto').slice(0, 40), medium: (q.get('utm_medium') || '').slice(0, 40), campaign: (q.get('utm_campaign') || '').slice(0, 60), content: (q.get('utm_content') || '').slice(0, 60), em: Date.now() };
+      try { localStorage.setItem('hf_origem', JSON.stringify(o)); } catch (e) {}
+      history.replaceState(null, '', location.pathname); // limpa a URL
+    } else { try { o = JSON.parse(localStorage.getItem('hf_origem') || 'null'); } catch (e) {} }
+  } catch (e) {}
+  return o;
+})();
+const origemRecente = !!(ORIGEM && Date.now() - ORIGEM.em < 3 * 864e5);
+let jaLogou = false; // depois de sair da conta, volta para "Entrar"
+if (origemRecente) modoAuth = 'criar';
 function vAuth() {
   document.body.classList.add('noauth'); rota = 'auth';
   $('hdrBtn').style.visibility = 'hidden';
@@ -313,7 +341,7 @@ function vAuth() {
         : `<button class="link ac" onclick="A.modo('entrar')">Já tenho conta — entrar</button>`}
     </div></div>`;
 }
-const msgAuth = c => ({ 'auth/invalid-credential': 'E-mail ou senha incorretos.', 'auth/wrong-password': 'E-mail ou senha incorretos.', 'auth/user-not-found': 'E-mail ou senha incorretos.',
+const msgAuth = c => ({ 'auth/invalid-credential': 'E-mail ou senha incorretos. Se você já tem conta, toque em "Esqueci a senha".', 'auth/wrong-password': 'E-mail ou senha incorretos. Se você já tem conta, toque em "Esqueci a senha".', 'auth/user-not-found': 'E-mail ou senha incorretos. Se você já tem conta, toque em "Esqueci a senha".',
   'auth/email-already-in-use': 'Já existe conta com este e-mail.', 'auth/weak-password': 'Senha fraca (mínimo 6 caracteres).', 'auth/invalid-email': 'E-mail inválido.',
   'auth/network-request-failed': 'Sem internet. O primeiro login precisa de conexão.', 'auth/too-many-requests': 'Muitas tentativas. Aguarde alguns minutos.' }[c] || c);
 async function enviarAuth() {
@@ -322,9 +350,20 @@ async function enviarAuth() {
     if (modoAuth === 'entrar') await signInWithEmailAndPassword(auth, email, senha);
     else if (modoAuth === 'criar') { if (!$('aAceite').checked) { b.disabled = false; return toast('Aceite os termos para criar a conta'); }
       const c = await createUserWithEmailAndPassword(auth, email, senha); await updateProfile(c.user, { displayName: $('aNome').value.trim() });
-      await setDoc(doc(db, 'users', c.user.uid), { aceite: { versao: VERSAO_TERMOS, em: Date.now() }, email, nome: $('aNome').value.trim(), criadoEm: Date.now() }, { merge: true }).catch(() => {}); }
+      await setDoc(doc(db, 'users', c.user.uid), { aceite: { versao: VERSAO_TERMOS, em: Date.now() }, email, nome: $('aNome').value.trim(), criadoEm: Date.now(), origem: ORIGEM || { source: 'direto' } }, { merge: true }).catch(() => {}); }
     else { await sendPasswordResetEmail(auth, email); toast('E-mail enviado. Confira sua caixa de entrada e o spam.', 5000); modoAuth = 'entrar'; vAuth(); }
-  } catch (e) { toast(msgAuth(e.code || e.message), 4000); b.disabled = false; }
+  } catch (e) {
+    if (e.code === 'auth/email-already-in-use') { b.disabled = false;
+      return openModal(`<h2>Este e-mail já tem conta</h2><div class="mut" style="margin-bottom:14px">Já existe uma conta com <b style="color:var(--tx)">${esc(email)}</b>. Se não lembra a senha, enviamos um link para criar uma nova (confira também o spam).</div>
+        <button class="btn" onclick="A.recuperarDoCadastro()">Enviar link para nova senha</button>
+        <button class="btn ghost" style="margin-top:8px" onclick="A.closeModal();A.modo('entrar')">Entrar com minha senha</button>`); }
+    toast(msgAuth(e.code || e.message), 5000); b.disabled = false; }
+}
+async function recuperarDoCadastro() {
+  const email = $('aEmail')?.value.trim(); closeModal();
+  try { await sendPasswordResetEmail(auth, email); toast('Link enviado para ' + email + '. Confira a caixa de entrada e o spam.', 6000); }
+  catch (e) { toast(msgAuth(e.code || e.message), 5000); }
+  modoAuth = 'entrar'; vAuth(); const i = $('aEmail'); if (i) i.value = email;
 }
 async function sair() {
   if (S.ativo && !confirm('Há um treino em andamento. Ele fica salvo na nuvem. Sair mesmo assim?')) return;
@@ -1558,15 +1597,19 @@ function vAdmin() {
   setHdr('Liberar assinantes e vitalícios', 'Admin');
   if (!adminLista) { $('view').innerHTML = `<div class="empty"><span class="spin"></span>Carregando usuários…</div>`; carregarAdmin(); return; }
   const n = t => adminLista.filter(u => statusDe(u)[0].startsWith(t)).length;
+  const origemTxt = u => u.origem ? [u.origem.source, u.origem.content].filter(Boolean).join(' · ') : 'sem origem';
+  const porOrigem = {}; adminLista.forEach(u => { const k = origemTxt(u), pago = /Assinante|Vitalício/.test(statusDe(u)[0]); porOrigem[k] = porOrigem[k] || { c: 0, p: 0 }; porOrigem[k].c++; if (pago) porOrigem[k].p++; });
   $('view').innerHTML = `<div class="kpis3"><div class="kpi"><b>${adminLista.length}</b><span class="mut">usuários</span></div><div class="kpi"><b>${n('Assinante') + n('Vitalício')}</b><span class="mut">com acesso pago/vitalício</span></div><div class="kpi"><b>${n('Teste:')}</b><span class="mut">em teste</span></div></div>
     <div class="card"><b>Liberar acesso</b>
       <label class="f">E-mail do usuário (o da conta no app)</label><input class="in" id="admEmail" type="email" placeholder="cliente@email.com">
       <label class="f">Tipo</label><select class="in" id="admTipo" style="max-width:100%"><option value="1">Assinante · 1 mês</option><option value="3">Assinante · 3 meses</option><option value="12">Assinante · 12 meses</option><option value="v">Vitalício</option><option value="x">Remover acesso</option></select>
       <button class="btn" style="margin-top:12px" onclick="A.admLiberar()">Salvar</button>
       <div class="mut" style="font-size:12px;margin-top:8px">Renovação: escolha 1 mês de novo — o prazo soma a partir da data atual de vencimento.</div></div>
+    <div class="card"><b>Cadastros por origem</b><table class="cmp" style="margin-top:6px"><tr><th>Origem</th><th>Cadastros</th><th>Pagos</th></tr>
+      ${Object.entries(porOrigem).sort((a, b) => b[1].c - a[1].c).map(([k, v]) => `<tr><td>${esc(k)}</td><td>${v.c}</td><td>${v.p}</td></tr>`).join('')}</table></div>
     <div class="card"><div class="row"><b>Usuários recentes</b><button class="link ac" onclick="A.admRecarregar()">Atualizar</button></div>
       ${adminLista.map(u => { const [t, c] = statusDe(u); return `<div class="sess" onclick="A.admUsar('${esc(u.email || '')}')"><div class="row"><div style="min-width:0"><div style="overflow:hidden;text-overflow:ellipsis">${esc(u.nome || '—')} · <span class="mut">${esc(u.email || 'sem e-mail')}</span></div>
-        <div class="mut" style="font-size:12px">último acesso ${u.ultimoAcesso ? fmtDH(u.ultimoAcesso) : '—'}</div></div><span style="color:${c};font-size:12px;font-weight:600;white-space:nowrap">${t}</span></div></div>`; }).join('') || '<div class="mut" style="margin-top:8px">Nenhum usuário ainda.</div>'}</div>
+        <div class="mut" style="font-size:12px">último acesso ${u.ultimoAcesso ? fmtDH(u.ultimoAcesso) : '—'} · ${esc(origemTxt(u))}</div></div><span style="color:${c};font-size:12px;font-weight:600;white-space:nowrap">${t}</span></div></div>`; }).join('') || '<div class="mut" style="margin-top:8px">Nenhum usuário ainda.</div>'}</div>
     <button class="btn ghost" onclick="A.go('ajustes')">Voltar</button>`;
 }
 function admUsar(email) { const el = $('admEmail'); if (el) { el.value = email; el.scrollIntoView({ behavior: 'smooth', block: 'center' }); } }
@@ -1681,12 +1724,14 @@ window.A = { go, editar, df, d, ds, toggleBi, moverEx, removerEx, addEx, addSeri
   abaDieta: k => { abaDieta = k; refAberta = null; vDieta(); }, mudaDia, agua: aguaClick, abreRef, marcaRef, subsAlimento, trocaAlimento, comiOutra, estimar, registrarExtra, removeExtra, voltarPlano,
   setTextoDieta: v => { textoDieta = v; }, gerarDieta, setDietaImp: (k, v) => { dietaImport[k] = v; }, salvarDietaImport, editarPlano, dp, dm, dr, di, dqn, dun, addItem, remItem, addRef, remRef, metasDosItens, salvarPlanoManual, excluirPlano,
   verExercicio, admLiberar, admUsar, admRecarregar: () => { adminLista = null; vAdmin(); }, aceitarTermos, guiaInstalacao: () => guiaInstalacao(false), instalarAgora, excluirConta, confirmarExclusao,
-  modo: m => { modoAuth = m; vAuth(); } };
+  recuperarDoCadastro,
+  modo: m => { const em = $('aEmail')?.value || ''; modoAuth = m; vAuth(); if (em && $('aEmail')) $('aEmail').value = em; } };
 
 if (!configurado) render();
 else onAuthStateChanged(auth, u => {
+  if (u) jaLogou = true;
   S.user = u;
-  if (!u) { unsubs.forEach(x => x()); unsubs = []; S.fichas = []; S.sessoes = []; S.avaliacoes = []; S.plano = null; S.diario = []; S.ativo = null; document.body.classList.remove('emtreino'); $('tBar').style.display = 'none'; pararTimerUI(); modoAuth = 'entrar'; render(); return; }
+  if (!u) { unsubs.forEach(x => x()); unsubs = []; S.fichas = []; S.sessoes = []; S.avaliacoes = []; S.plano = null; S.diario = []; S.ativo = null; document.body.classList.remove('emtreino'); $('tBar').style.display = 'none'; pararTimerUI(); modoAuth = (!jaLogou && origemRecente) ? 'criar' : 'entrar'; render(); return; }
   document.body.classList.remove('noauth'); rota = 'fichas'; primeiraCarga = true; pilha = ['fichas']; history.replaceState({ rota: 'fichas', i: 0 }, '');
   S.pronto = { fichas: false, sessoes: false, perfil: false, ativo: false, avaliacoes: false, plano: false, diario: false, acesso: false }; S.acesso = null; acessoRegistrado = false; adminLista = null;
   setHdr('', 'Hyper Fit'); $('view').innerHTML = '<div class="empty"><span class="spin"></span>Carregando seus treinos…</div>';

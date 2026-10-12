@@ -79,3 +79,6 @@ Basta enviar os arquivos alterados para o GitHub. Cada celular baixa a versão n
 - Firestore: 1 GiB de dados, 50 mil leituras e 20 mil gravações por dia.
 - Gemini: tem limite diário de uso. Se o limite for atingido, só a IA fica indisponível por um tempo. Seus dados e o restante do app não são afetados.
 - No plano gratuito, o Google pode usar os textos enviados à IA para melhorar os produtos dele. Por isso, não envie dados de saúde nem dados pessoais nos prompts.
+
+## Origem dos cadastros (v2.8)
+Links com `?utm_source=...` (os dos anúncios) abrem o app direto em **Criar conta** e gravam de onde a pessoa veio (ex.: `meta · v2`). No Admin aparece a tabela **Cadastros por origem**, com quantos pagaram. Link sem UTM para divulgar à mão: `https://hypertreino.com.br/?cadastro`.
