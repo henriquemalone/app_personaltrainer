@@ -38,4 +38,4 @@ export const SUPORTE_WHATSAPP = "5519982278392";
 export const SUPORTE_EMAIL = "hypertreinos@gmail.com";
 // Endereço do Apps Script que envia as sugestões por e-mail (passo a passo no LEIA-ME, seção "Sugestões").
 // Vazio = as sugestões só aparecem na tela Admin.
-export const SUGESTOES_URL = "";
+export const SUGESTOES_URL = "https://script.google.com/macros/s/AKfycbwOc6tRs4wAW4ARZn0zwOa_ibE-Vhk1ffJwicYNbBbnUhLwpLSbtUlvVvoeX-FgdXKsjg/exec";
