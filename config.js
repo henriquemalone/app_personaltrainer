@@ -43,8 +43,8 @@ export const SUGESTOES_URL = "https://script.google.com/macros/s/AKfycbwOc6tRs4w
 // ================= Assinatura automática (teste grátis com cartão) =================
 // Preencha os dois para ligar. Vazios = continua o modelo antigo (teste sem cartão + link do Mercado Pago).
 // Public Key do Mercado Pago (Suas integrações → sua aplicação → Credenciais). NÃO é o Access Token.
-export const MP_PUBLIC_KEY = "";
+export const MP_PUBLIC_KEY = "APP_USR-f51223e7-34ec-4fa3-b574-219b30d35c94";
 // Endereço da função "hyperfit-api" no Google Cloud (passo a passo no LEIA-ME, seção "Assinatura automática").
-export const ASSINATURA_API = "";
+export const ASSINATURA_API = "https://hyperfitapi-988780755151.southamerica-east1.run.app";
 // Contas criadas a partir desta data precisam cadastrar o cartão para o teste. As mais antigas mantêm o teste sem cartão.
 export const CARTAO_DESDE = "2026-10-14";
