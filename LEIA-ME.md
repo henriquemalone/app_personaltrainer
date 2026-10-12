@@ -77,8 +77,15 @@ Basta enviar os arquivos alterados para o GitHub. Cada celular baixa a versão n
 
 ## Limites do plano gratuito (sobram para uso pessoal)
 - Firestore: 1 GiB de dados, 50 mil leituras e 20 mil gravações por dia.
-- Gemini: tem limite diário de uso. Se o limite for atingido, só a IA fica indisponível por um tempo. Seus dados e o restante do app não são afetados.
-- No plano gratuito, o Google pode usar os textos enviados à IA para melhorar os produtos dele. Por isso, não envie dados de saúde nem dados pessoais nos prompts.
+- Gemini: desde a v2.9 o app usa a IA paga (ver "IA paga" abaixo). Com `IA_PROVEDOR = "dev"` no `config.js`, volta para a gratuita (20 pedidos/dia para o app inteiro, e o Google pode usar os textos).
 
 ## Origem dos cadastros (v2.8)
 Links com `?utm_source=...` (os dos anúncios) abrem o app direto em **Criar conta** e gravam de onde a pessoa veio (ex.: `meta · v2`). No Admin aparece a tabela **Cadastros por origem**, com quantos pagaram. Link sem UTM para divulgar à mão: `https://hypertreino.com.br/?cadastro`.
+
+## IA paga — Agent Platform (v2.9)
+1. Firebase no **plano Blaze** (cartão cadastrado, cobrança conforme o uso).
+2. Firebase → **AI Logic** → **Agent Platform Gemini API: Ativada**.
+3. **Teto de gasto:** https://console.cloud.google.com/billing/budgets → **Create new** → *Aplicação de limite de gastos* (Spend cap enforcement) → projeto `apppersonal-df7d1` + serviço **Agent Platform / Vertex AI** → R$ 30/mês. Ao atingir, a IA pausa (o resto do app continua) e volta sozinha no dia 1º do mês seguinte.
+4. **Limite por usuário (contra abuso):** https://console.cloud.google.com/apis/api/firebasevertexai.googleapis.com/quotas?project=apppersonal-df7d1 → filtre por **generate content requests** (por usuário, por minuto) → marque a cota → **Editar cota** → `10` → **Enviar solicitação**.
+5. `config.js`: `IA_PROVEDOR = "agent"` e `MODELO_IA = "gemini-3.6-flash"`. Quando o Google anunciar o fim do 3.6, troque só o nome do modelo.
+Custo esperado: centavos por usuário (importar treino ≈ R$ 0,10; dieta ≈ R$ 0,10; estimar refeição ≈ R$ 0,015). Acompanhe em Faturamento → Relatórios.

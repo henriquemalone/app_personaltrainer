@@ -1,10 +1,10 @@
 // ================================================================
 //  Treino v2 — PWA + Firebase (Auth, Firestore offline, AI Logic)
 // ================================================================
-export const VERSAO_APP = '2.8.1';
+export const VERSAO_APP = '2.9.0';
 const FB = 'https://www.gstatic.com/firebasejs/12.19.0/';
 
-import { firebaseConfig, RECAPTCHA_SITE_KEY, MODELO_IA, YOUTUBE_API_KEY, ADMIN_EMAIL, LINK_ASSINATURA, PRECO_TXT, DIAS_TESTE, SUPORTE_WHATSAPP, SUPORTE_EMAIL } from './config.js';
+import { firebaseConfig, RECAPTCHA_SITE_KEY, IA_PROVEDOR, MODELO_IA, YOUTUBE_API_KEY, ADMIN_EMAIL, LINK_ASSINATURA, PRECO_TXT, DIAS_TESTE, SUPORTE_WHATSAPP, SUPORTE_EMAIL } from './config.js';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword,
   sendPasswordResetEmail, signOut, updateProfile, deleteUser, reauthenticateWithCredential, EmailAuthProvider } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js';
@@ -112,10 +112,12 @@ function aoMudar(o) {
 async function modeloIA(schema) {
   const key = JSON.stringify(schema);
   if (aiModelCache[key]) return aiModelCache[key];
-  const { getAI, getGenerativeModel, GoogleAIBackend } = await import(FB + 'firebase-ai.js');
-  const ai = getAI(app, { backend: new GoogleAIBackend() });
+  const { getAI, getGenerativeModel, GoogleAIBackend, AgentPlatformBackend } = await import(FB + 'firebase-ai.js');
+  // "agent": Agent Platform (pago por uso, endpoint global). "dev": Gemini Developer API (gratuito, cota baixa).
+  const ai = getAI(app, { backend: IA_PROVEDOR === 'dev' ? new GoogleAIBackend() : new AgentPlatformBackend('global') });
   return aiModelCache[key] = getGenerativeModel(ai, { model: MODELO_IA,
-    generationConfig: { responseMimeType: 'application/json', responseJsonSchema: schema, temperature: 0.2 } });
+    // raciocínio "LOW": extrair texto para JSON não precisa de raciocínio longo; reduz custo e tempo de resposta
+    generationConfig: { responseMimeType: 'application/json', responseJsonSchema: schema, temperature: 0.2, thinkingConfig: { thinkingLevel: 'LOW' } } });
 }
 // Horário local em que a cota diária do Gemini volta (meia-noite no horário do Pacífico)
 function horaResetIA() {
@@ -127,7 +129,9 @@ function erroIA(e) {
   console.error('IA', e);
   const m = String(e?.message || e), st = Number(e?.customErrorData?.status) || 0;
   if (!navigator.onLine) return 'Sem internet. A IA precisa de conexão.';
+  if (/billing|spend.?cap|BILLING_DISABLED|budget/i.test(m)) return 'A IA está temporariamente indisponível. Tente de novo mais tarde ou fale com o suporte.';
   if (st === 429 || /\b429\b|RESOURCE_EXHAUSTED|quota exceeded/i.test(m)) {
+    if (IA_PROVEDOR !== 'dev') return 'Muitos pedidos à IA em pouco tempo. Aguarde 1 minuto e tente de novo.';
     const h = horaResetIA();
     return 'Limite gratuito da IA atingido. Se foi o limite por minuto, tente de novo em 1 minuto' + (h ? `; o limite diário volta às ${h}.` : '.');
   }

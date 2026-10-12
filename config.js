@@ -16,8 +16,11 @@ export const firebaseConfig = {
 // Chave do reCAPTCHA (App Check) — obrigatória para a IA a partir de 02/11/2026.
 export const RECAPTCHA_SITE_KEY = "6LcBV-UtAAAAAGw-f2_BGfIep3bAUOiHbsBEYFP5";
 
-// Modelo do Gemini usado no cadastro por prompt e nas substituições.
-export const MODELO_IA = "gemini-3.5-flash";
+// Provedor da IA: "agent" = Agent Platform Gemini API (pago por uso no plano Blaze, sem limite diário baixo)
+//                  "dev"   = Gemini Developer API (gratuito, 20 pedidos/dia para o app inteiro)
+export const IA_PROVEDOR = "agent";
+// Modelo do Gemini. Quando o Google desativar este, troque aqui (ex.: "gemini-3.8-flash").
+export const MODELO_IA = "gemini-3.6-flash";
 
 // Chave da YouTube Data API v3 (busca automática de vídeos de execução).
 // Restrinja a chave aos domínios hypertreino.com.br, www.hypertreino.com.br e henriquemalone.github.io no Google Cloud. Vazio = busca desativada.
