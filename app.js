@@ -1,7 +1,7 @@
 // ================================================================
 //  Treino v2 — PWA + Firebase (Auth, Firestore offline, AI Logic)
 // ================================================================
-export const VERSAO_APP = '2.12.4';
+export const VERSAO_APP = '2.12.5';
 const FB = 'https://www.gstatic.com/firebasejs/12.19.0/';
 
 import { firebaseConfig, RECAPTCHA_SITE_KEY, IA_PROVEDOR, MODELO_IA, YOUTUBE_API_KEY, ADMIN_EMAIL, LINK_ASSINATURA, PRECO_TXT, DIAS_TESTE, SUPORTE_WHATSAPP, SUPORTE_EMAIL, SUGESTOES_URL, MP_PUBLIC_KEY, ASSINATURA_API, CARTAO_DESDE } from './config.js';
@@ -1834,9 +1834,10 @@ function msgPagamento(m) {
   if (/failed to fetch|network/i.test(m)) return 'Sem conexão com o servidor de pagamento. Confira a internet e tente de novo.';
   return m;
 }
-function mostrarErroCartao(m) {
+let erroPagamentoEm = 0;
+function mostrarErroCartao(m, tecnico) {
   const box = $('cardErro'); if (!box) return toast(m, 7000, 'erro');
-  box.innerHTML = `<div class="banner bad"><b>Não foi possível ativar</b>${esc(m)}<button class="btn sm" style="margin-top:10px;display:block" onclick="A.recarregarCartao()">Tentar de novo</button></div>`;
+  box.innerHTML = `<div class="banner bad"><b>Não foi possível ativar</b>${esc(m)}${tecnico && tecnico !== m ? `<div style="font-size:11px;opacity:.75;margin-top:6px">Detalhe técnico: ${esc(tecnico)}</div>` : ''}<button class="btn sm" style="margin-top:10px;display:block" onclick="A.recarregarCartao()">Tentar de novo</button></div>`;
   box.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 async function chamarAPI(rota, body) {
@@ -1859,8 +1860,8 @@ async function montarCartao(acao, rotulo) {
           .then(r => { S.acesso = r.acesso; cartaoAberto = false; desmontarCartao();
             toast(acao === 'cartao' ? 'Cartão atualizado ✅' : (r.acesso?.teste ? 'Teste grátis ativado! Bom treino 💪' : 'Assinatura ativada! 💪'), 4500); go('fichas');
             if (acao === 'assinar' && !standalone() && !S.perfil.cfg.guiaInstalacao) setTimeout(() => { if (!$('modal').classList.contains('show')) guiaInstalacao(true); }, 1500); }) // depois de ativar: ensina a instalar
-          .catch(e => { const m = msgPagamento(e.message); toast(m, 7000, 'erro'); mostrarErroCartao(m); throw e; }),
-        onError: e => { console.warn('cartão', e); if (e?.type === 'critical') mostrarErroCartao('O formulário do cartão teve um problema. Toque em "Tentar de novo".'); } } });
+          .catch(e => { const m = msgPagamento(e.message); erroPagamentoEm = Date.now(); toast(m, 7000, 'erro'); mostrarErroCartao(m, e.message); throw e; }),
+        onError: e => { console.warn('cartão', e); if (e?.type === 'critical' && Date.now() - erroPagamentoEm > 5000) mostrarErroCartao('O formulário do cartão teve um problema. Toque em "Tentar de novo".', e?.message || e?.cause); } } });
   } catch (e) { const b = $('cardBrick'); if (b) b.innerHTML = `<div class="banner bad"><b>O formulário do cartão não carregou</b>${esc(e.message || 'Tente de novo em instantes.')}<button class="btn sm" style="margin-top:10px;display:block" onclick="A.recarregarCartao()">Tentar de novo</button></div>`; }
 }
 // Reserva: se a data de cobrança já passou, confere direto no Mercado Pago (caso um aviso automático tenha se perdido)
