@@ -1,7 +1,7 @@
 // ================================================================
 //  Treino v2 — PWA + Firebase (Auth, Firestore offline, AI Logic)
 // ================================================================
-export const VERSAO_APP = '2.12.7';
+export const VERSAO_APP = '2.12.8';
 const FB = 'https://www.gstatic.com/firebasejs/12.19.0/';
 
 import { firebaseConfig, RECAPTCHA_SITE_KEY, IA_PROVEDOR, MODELO_IA, YOUTUBE_API_KEY, ADMIN_EMAIL, LINK_ASSINATURA, PRECO_TXT, DIAS_TESTE, SUPORTE_WHATSAPP, SUPORTE_EMAIL, SUGESTOES_URL, MP_PUBLIC_KEY, ASSINATURA_API, CARTAO_DESDE } from './config.js';
@@ -1969,7 +1969,9 @@ function vAdmin() {
       <button class="btn" style="margin-top:12px" onclick="A.admLiberar()">Salvar</button>
       <div class="mut" style="font-size:12px;margin-top:8px">Renovação: escolha 1 mês de novo — o prazo soma a partir da data atual de vencimento.</div></div>
     ${MODO_CARTAO ? `<div class="card"><b>Cancelar assinaturas de um e-mail</b><div class="mut" style="margin:6px 0 10px">Para limpar testes ou assinaturas duplicadas. Cancela no Mercado Pago tudo que estiver ativo com esse e-mail de pagador.</div>
-      <input class="in" id="admLimpar" type="email" placeholder="email@do.pagador"><button class="btn bad" style="margin-top:10px" onclick="A.admLimpar()">Cancelar todas deste e-mail</button><div id="admLimparRes" class="mut" style="margin-top:8px"></div></div>` : ''}
+      <input class="in" id="admLimpar" type="email" placeholder="email@do.pagador">
+      <div class="btns" style="margin-top:10px"><button class="btn ghost" style="flex:1" onclick="A.admConsultar()">Consultar</button><button class="btn bad" style="flex:1" onclick="A.admLimpar()">Cancelar todas</button></div>
+      <div id="admLimparRes" style="margin-top:10px;font-size:14px"></div></div>` : ''}
     <div class="card"><b>Sugestões recebidas</b>${adminSug === null ? `<div class="mut" style="margin-top:6px">Publique as regras novas do Firestore (firestore.rules) para ver as sugestões aqui.</div>`
       : !adminSug.length ? `<div class="mut" style="margin-top:6px">Nenhuma ainda.</div>` : adminSug.map(x => `<div class="sess" style="cursor:default"><div class="row"><span class="chip">${esc(x.tipo || '')}</span><span class="mut" style="font-size:12px">${fmtDH(x.em)}</span></div>
         <div style="margin:6px 0 4px;white-space:pre-wrap;font-size:14px">${esc(x.texto)}</div><div class="mut" style="font-size:12px">${esc(x.nome || '')} · <a href="mailto:${esc(x.email)}" style="color:var(--act)">${esc(x.email)}</a> · v${esc(x.versao || '')}</div></div>`).join('')}</div>
@@ -1985,7 +1987,17 @@ async function admLimpar() {
   const email = ($('admLimpar')?.value || '').trim(); if (!email) return toast('Informe o e-mail');
   if (!confirm(`Cancelar no Mercado Pago TODAS as assinaturas ativas do e-mail ${email}?`)) return;
   const out = $('admLimparRes'); out.innerHTML = '<span class="spin"></span>Cancelando…';
-  try { const r = await chamarAPI('limpar', { email }); out.textContent = `Encontradas: ${r.encontradas} · canceladas: ${r.canceladas.filter(x => x.ok).length}`; toast('Assinaturas canceladas ✅', 4000); }
+  try { const r = await chamarAPI('limpar', { email }); const ok = r.canceladas.filter(x => x.ok).length;
+    toast(r.encontradas ? `${ok} de ${r.encontradas} assinatura${r.encontradas > 1 ? 's' : ''} cancelada${ok > 1 ? 's' : ''} ✅` : 'Nenhuma assinatura ativa com esse e-mail', 6000, r.encontradas && ok < r.encontradas ? 'erro' : undefined);
+    await admConsultar(true); }
+  catch (e) { out.textContent = ''; toast(e.message, 7000, 'erro'); }
+}
+const STATUS_MP = { authorized: ['Ativa', 'ok'], pending: ['Pendente', 'warn'], paused: ['Pausada', 'warn'], cancelled: ['Cancelada', 'bad'] };
+async function admConsultar(silencioso) {
+  const email = ($('admLimpar')?.value || '').trim(); if (!email) return toast('Informe o e-mail');
+  const out = $('admLimparRes'); if (!silencioso) out.innerHTML = '<span class="spin"></span>Consultando…';
+  try { const r = await chamarAPI('consultar', { email }); const at = r.assinaturas.filter(x => ['authorized', 'pending'].includes(x.status)).length;
+    out.innerHTML = `<b>${r.total} assinatura${r.total === 1 ? '' : 's'} com este e-mail · ${at} ativa${at === 1 ? '' : 's'}</b>` + r.assinaturas.map(x => { const [t, c] = STATUS_MP[x.status] || [x.status, '']; return `<div class="row" style="padding:8px 0;border-bottom:1px solid var(--line)"><span class="mut" style="font-size:12px">criada ${new Date(x.criada).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}${x.proxCobranca && x.status !== 'cancelled' ? ` · cobra em ${new Date(x.proxCobranca).toLocaleDateString('pt-BR')}` : ''}</span><span class="chip ${c}">${t}</span></div>`; }).join(''); }
   catch (e) { out.textContent = ''; toast(e.message, 7000, 'erro'); }
 }
 async function admLiberar() {
@@ -2127,7 +2139,7 @@ window.A = { go, editar, df, d, ds, toggleBi, moverEx, removerEx, addEx, addSeri
   abaDieta: k => { abaDieta = k; refAberta = null; vDieta(); }, mudaDia, agua: aguaClick, abreRef, marcaRef, subsAlimento, trocaAlimento, comiOutra, estimar, registrarExtra, removeExtra, voltarPlano,
   setTextoDieta: v => { textoDieta = v; }, gerarDieta, setDietaImp: (k, v) => { dietaImport[k] = v; }, salvarDietaImport, editarPlano, dp, dm, dr, di, dqn, dun, addItem, remItem, addRef, remRef, metasDosItens, salvarPlanoManual, excluirPlano,
   verExercicio, admLiberar, admUsar, admRecarregar: () => { adminLista = null; vAdmin(); }, aceitarTermos, guiaInstalacao: () => guiaInstalacao(false), instalarAgora, excluirConta, confirmarExclusao,
-  recuperarDoCadastro, admLimpar, cancelarAssinatura, trocarCartao, recarregarCartao: () => { desmontarCartao(); vAssinar(); }, irLogin, voltarLanding, setNomeTreino, toggleProg, toggleFicha, menuProg, renomearProg, salvarNomeProg, validadeProg, salvarValidadeProg, atualProg, excluirProg, menuFicha, duplicarFicha, novoTreinoManual, criarTreinoManual, trocarAtual, pularOuProximo, sugerir, enviarSugestao, sugTipo: setSugTipo,
+  recuperarDoCadastro, admLimpar, admConsultar, cancelarAssinatura, trocarCartao, recarregarCartao: () => { desmontarCartao(); vAssinar(); }, irLogin, voltarLanding, setNomeTreino, toggleProg, toggleFicha, menuProg, renomearProg, salvarNomeProg, validadeProg, salvarValidadeProg, atualProg, excluirProg, menuFicha, duplicarFicha, novoTreinoManual, criarTreinoManual, trocarAtual, pularOuProximo, sugerir, enviarSugestao, sugTipo: setSugTipo,
   setTema: t => { aplicarTema(t); S.perfil.cfg.tema = t; salvarCfg(); keepScroll(vAjustes); },
   modo: m => { const em = $('aEmail')?.value || ''; modoAuth = m; vAuth(); if (em && $('aEmail')) $('aEmail').value = em; } };
 
