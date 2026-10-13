@@ -1,7 +1,7 @@
 // ================================================================
 //  Treino v2 — PWA + Firebase (Auth, Firestore offline, AI Logic)
 // ================================================================
-export const VERSAO_APP = '2.12.8';
+export const VERSAO_APP = '2.12.9';
 const FB = 'https://www.gstatic.com/firebasejs/12.19.0/';
 
 import { firebaseConfig, RECAPTCHA_SITE_KEY, IA_PROVEDOR, MODELO_IA, YOUTUBE_API_KEY, ADMIN_EMAIL, LINK_ASSINATURA, PRECO_TXT, DIAS_TESTE, SUPORTE_WHATSAPP, SUPORTE_EMAIL, SUGESTOES_URL, MP_PUBLIC_KEY, ASSINATURA_API, CARTAO_DESDE } from './config.js';
@@ -48,6 +48,16 @@ document.addEventListener('focusin', e => {
   setTimeout(() => { try { if (document.activeElement === t) t.setSelectionRange(0, t.value.length); } catch (x) {} }, 40);
 });
 const clone = o => JSON.parse(JSON.stringify(o));
+// Erros inesperados do app: aviso com a mensagem e o local (arquivo:linha) para facilitar o suporte
+const errosRecentes = [];
+function registrarErro(msg, onde) {
+  if (/ResizeObserver|Script error\.?$|mercadolibre|extension:/i.test(msg + ' ' + (onde || ''))) return; // ruído de terceiros
+  const linha = `${msg}${onde ? ' (' + onde + ')' : ''}`; errosRecentes.unshift({ em: Date.now(), linha }); errosRecentes.length = Math.min(errosRecentes.length, 10);
+  try { localStorage.setItem('hf_erros', JSON.stringify(errosRecentes)); } catch (e) {}
+  toast('Erro no app: ' + linha, 8000, 'erro');
+}
+window.addEventListener('error', e => registrarErro(e.message, e.filename ? `${e.filename.split('/').pop()}:${e.lineno}` : ''));
+window.addEventListener('unhandledrejection', e => { const r = e.reason; const m = String(r?.stack || '').match(/\/([\w.-]+\.js):(\d+)/); registrarErro(r?.message || String(r), m ? `${m[1]}:${m[2]}` : ''); });
 // Avisos: verde = deu certo, vermelho = erro (ficam mais tempo na tela), azul = informação. Toque para fechar.
 function toast(m, ms = 3200, tipo) {
   const t = $('toast'); m = String(m ?? '');
@@ -136,7 +146,7 @@ function erroEscuta(e) { console.error(e); toast('Sem acesso aos dados: ' + (e.c
 let primeiraCarga = true;
 function aoMudar(o) {
   if (!Object.values(S.pronto).every(Boolean)) return;
-  if (primeiraCarga) { primeiraCarga = false; if (S.ativo) { rota = 'treino'; pilha.push('treino'); history.pushState({ rota: 'treino', i: 1 }, ''); } if (statusAcesso().tipo === 'sem-cartao' && !S.ativo) { rota = 'assinar'; pilha.push('assinar'); history.pushState({ rota: 'assinar', i: pilha.length - 1 }, ''); } render(); if (posLogin()) { checarAvisoValidade(); checarMigracao(); } return; }
+  if (primeiraCarga) { primeiraCarga = false; if (S.ativo) { rota = 'treino'; pilha.push('treino'); history.pushState({ rota: 'treino', i: 1 }, ''); } if (statusAcesso().tipo === 'sem-cartao' && !S.ativo) { rota = 'assinar'; pilha.push('assinar'); history.pushState({ rota: 'assinar', i: pilha.length - 1 }, ''); } render(); if (posLogin() && statusAcesso().tipo !== 'sem-cartao') { checarAvisoValidade(); checarMigracao(); } return; }
   if (['editar', 'prompt', 'auth', 'revisar', 'avaliacao', 'dietaTexto', 'dietaRevisar', 'dietaEditar'].includes(rota)) return;
   if (rota === 'dieta' && (o === 'diario' || o === 'plano') && document.getElementById('modal').classList.contains('show')) return; // não atrapalhar quem está digitando
   if (rota === 'treino' && S.ativo && o !== 'ativo') return;
@@ -433,6 +443,7 @@ async function enviarAuth() {
     if (modoAuth === 'entrar') await signInWithEmailAndPassword(auth, email, senha);
     else if (modoAuth === 'criar') { if (!$('aAceite').checked) { b.disabled = false; return toast('Aceite os termos para criar a conta'); }
       const c = await createUserWithEmailAndPassword(auth, email, senha); await updateProfile(c.user, { displayName: $('aNome').value.trim() });
+      aceitouAgora = VERSAO_TERMOS;
       await setDoc(doc(db, 'users', c.user.uid), { aceite: { versao: VERSAO_TERMOS, em: Date.now() }, email, nome: $('aNome').value.trim(), criadoEm: Date.now(), origem: ORIGEM || { source: 'direto' } }, { merge: true }).catch(() => {}); }
     else { await sendPasswordResetEmail(auth, email); toast('E-mail enviado. Confira sua caixa de entrada e o spam.', 5000); modoAuth = 'entrar'; vAuth(); }
   } catch (e) {
@@ -2037,8 +2048,9 @@ function enviarSugestao() {
   closeModal(); toast('Sugestão enviada. Obrigado! 🙌', 3500);
 }
 // ---------- Termos (aceite) ----------
+let aceitouAgora = null;
 function checarAceite() {
-  if (S.perfil.aceite?.versao === VERSAO_TERMOS) return true;
+  if (S.perfil.aceite?.versao === VERSAO_TERMOS || aceitouAgora === VERSAO_TERMOS) return true;
   openModal(`<h2>Termos de uso e privacidade</h2>
     <div class="mut" style="line-height:1.6;margin-bottom:12px">Para continuar, leia e aceite os <a href="termos.html" target="_blank" style="color:var(--act)">Termos de Uso</a> e a <a href="privacidade.html" target="_blank" style="color:var(--act)">Política de Privacidade</a>. O app guarda dados de treino, medidas corporais e alimentação, que são dados de saúde.</div>
     <label class="row left" style="gap:10px;font-size:14px;align-items:flex-start"><input type="checkbox" id="acCk" style="width:22px;height:22px;flex-shrink:0;margin-top:2px">Li e aceito os Termos e a Política de Privacidade, tenho 18 anos ou mais e consinto com o tratamento dos meus dados de saúde para as funções do app.</label>
@@ -2047,9 +2059,9 @@ function checarAceite() {
   return false;
 }
 function aceitarTermos() {
-  if (!$('acCk').checked) return toast('Marque a caixa para continuar');
+  if (!$('acCk')?.checked) return toast('Marque a caixa para continuar');
   S.perfil.aceite = { versao: VERSAO_TERMOS, em: Date.now() };
-  setDoc(uref(), { aceite: S.perfil.aceite }, { merge: true }).catch(falhou); closeModal(); if (posLogin()) { checarAvisoValidade(); checarMigracao(); }
+  setDoc(uref(), { aceite: S.perfil.aceite }, { merge: true }).catch(falhou); closeModal(); if (posLogin() && statusAcesso().tipo !== 'sem-cartao') { checarAvisoValidade(); checarMigracao(); }
 }
 // ---------- Instalação guiada ----------
 let promptInstalar = null;
