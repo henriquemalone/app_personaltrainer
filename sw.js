@@ -1,7 +1,7 @@
 // Service worker do Treino v2
 // Estratégia: arquivos do app = rede primeiro (sempre a versão mais nova quando online),
 // com cópia em cache para funcionar offline. Bibliotecas do Firebase = cache primeiro (URLs versionadas).
-const CACHE = 'hyperfit-v2.12.9';
+const CACHE = 'hyperfit-v2.13';
 const FB = 'https://www.gstatic.com/firebasejs/12.19.0/';
 const APP = ['./', './index.html', './app.js', './config.js', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon-512-maskable.png', './apple-touch-icon.png', './termos.html', './privacidade.html'];
 const LIBS = ['firebase-app.js', 'firebase-auth.js', 'firebase-firestore.js', 'firebase-ai.js', 'firebase-app-check.js'].map(f => FB + f);
@@ -26,6 +26,17 @@ self.addEventListener('fetch', e => {
   if (url.origin !== location.origin) return; // Firestore, Auth, IA: direto para a rede
   if (req.mode === 'navigate') { e.respondWith(redePrimeiro(req, './index.html')); return; }
   e.respondWith(redePrimeiro(req));
+});
+// Aviso de fim de descanso enviado pelo servidor (chega com o app em segundo plano ou fechado)
+self.addEventListener('push', e => {
+  let d = {}; try { d = e.data ? e.data.json() : {}; } catch (x) {}
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(cs => {
+    const aberto = cs.some(c => c.visibilityState === 'visible' && c.focused);
+    return self.registration.showNotification(d.titulo || 'Descanso acabou', {
+      body: d.corpo || 'Hora da próxima série', tag: d.tag || 'descanso', renotify: true, icon: 'icon-192.png', badge: 'icon-192.png',
+      vibrate: [300, 150, 300, 150, 300], silent: aberto, data: { url: './' } })
+      .then(() => { if (aberto) return self.registration.getNotifications({ tag: d.tag || 'descanso' }).then(ns => setTimeout(() => ns.forEach(n => n.close()), 1500)); }); // app aberto: o próprio app já avisou
+  }));
 });
 self.addEventListener('notificationclick', e => {
   e.notification.close();
