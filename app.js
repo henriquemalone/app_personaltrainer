@@ -1,7 +1,7 @@
 // ================================================================
 //  Treino v2 — PWA + Firebase (Auth, Firestore offline, AI Logic)
 // ================================================================
-export const VERSAO_APP = '2.12.9';
+export const VERSAO_APP = '2.13.0';
 const FB = 'https://www.gstatic.com/firebasejs/12.19.0/';
 
 import { firebaseConfig, RECAPTCHA_SITE_KEY, IA_PROVEDOR, MODELO_IA, YOUTUBE_API_KEY, ADMIN_EMAIL, LINK_ASSINATURA, PRECO_TXT, DIAS_TESTE, SUPORTE_WHATSAPP, SUPORTE_EMAIL, SUGESTOES_URL, MP_PUBLIC_KEY, ASSINATURA_API, CARTAO_DESDE } from './config.js';
@@ -88,7 +88,7 @@ if (configurado) {
 }
 
 // ================= Estado =================
-const cfgPadrao = () => ({ backupDias: 14, ultimoBackup: null, avisoVisto: null, migrado: false, tema: null });
+const cfgPadrao = () => ({ backupDias: 14, ultimoBackup: null, avisoVisto: null, migrado: false, tema: null, somDescanso: true, vibDescanso: true });
 const S = { user: null, perfil: { cfg: cfgPadrao() }, fichas: [], programas: [], sessoes: [], avaliacoes: [], plano: null, diario: [], acesso: null, ativo: null, srv: {}, pronto: { fichas: false, programas: false, sessoes: false, perfil: false, ativo: false, avaliacoes: false, plano: false, diario: false, acesso: false } };
 let unsubs = [];
 const uref = (...p) => doc(db, 'users', S.user.uid, ...p);
@@ -146,7 +146,7 @@ function erroEscuta(e) { console.error(e); toast('Sem acesso aos dados: ' + (e.c
 let primeiraCarga = true;
 function aoMudar(o) {
   if (!Object.values(S.pronto).every(Boolean)) return;
-  if (primeiraCarga) { primeiraCarga = false; if (S.ativo) { rota = 'treino'; pilha.push('treino'); history.pushState({ rota: 'treino', i: 1 }, ''); } if (statusAcesso().tipo === 'sem-cartao' && !S.ativo) { rota = 'assinar'; pilha.push('assinar'); history.pushState({ rota: 'assinar', i: pilha.length - 1 }, ''); } render(); if (posLogin() && statusAcesso().tipo !== 'sem-cartao') { checarAvisoValidade(); checarMigracao(); } return; }
+  if (primeiraCarga) { primeiraCarga = false; if (S.ativo) { rota = 'treino'; pilha.push('treino'); history.pushState({ rota: 'treino', i: 1 }, ''); } if (statusAcesso().tipo === 'sem-cartao' && !S.ativo) { rota = 'assinar'; pilha.push('assinar'); history.pushState({ rota: 'assinar', i: pilha.length - 1 }, ''); } render(); if (posLogin() && statusAcesso().tipo !== 'sem-cartao') { checarAvisoValidade(); checarMigracao(); setTimeout(checarInatividade, 1200); } return; }
   if (['editar', 'prompt', 'auth', 'revisar', 'avaliacao', 'dietaTexto', 'dietaRevisar', 'dietaEditar'].includes(rota)) return;
   if (rota === 'dieta' && (o === 'diario' || o === 'plano') && document.getElementById('modal').classList.contains('show')) return; // não atrapalhar quem está digitando
   if (rota === 'treino' && S.ativo && o !== 'ativo') return;
@@ -833,7 +833,7 @@ function iniciar(id) {
   if (!statusAcesso().ok) return go('assinar');
   if (S.ativo && !confirm('Já existe um treino em andamento. Descartar e começar outro?')) return go('treino');
   const f = S.fichas.find(x => x.id === id); const ult = S.sessoes.find(s => s.fichaId === id);
-  S.ativo = { fichaId: f.id, letra: f.letra, nome: f.nome, inicio: Date.now(), passo: 0, pulados: [],
+  S.ativo = { fichaId: f.id, letra: f.letra, nome: f.nome, inicio: Date.now(), ultimaAtividade: Date.now(), passo: 0, pulados: [],
     itens: f.itens.map(e => { const pe = ultimoDoExercicio(e.nome, ult);
       return { id: e.id, nome: e.nome, descanso: e.descanso, bi: !!e.bi, obs: e.obs || '', nota: e.nota || '', videoId: e.videoId || '', subs: e.subs || [],
         meta: clone(e.series), prev: prevTxt(pe), sets: setsIniciais(e.series, pe) }; }) };
@@ -991,12 +991,12 @@ function vFimTreino() {
     <div style="text-align:center;margin-top:18px"><button class="link" onclick="A.sugerir()">Algo podia ser melhor? <u>Sugira</u></button></div>`;
   atualizarBotaoTreino(); relogio();
 }
-function finalizar() {
-  const T = S.ativo;
+function finalizar(fimForcado) {
+  const T = S.ativo; if (!T) return; const forcado = typeof fimForcado === 'number';
   const ex = T.itens.map(e => ({ nome: e.nome, bi: e.bi, sets: e.sets.filter(s => s.done).map(s => ({ kg: s.kg === '' ? 0 : num(s.kg), reps: parseInt(s.reps) || 0 })) })).filter(e => e.sets.length);
   if (!ex.length) { if (confirm('Nenhuma série foi registrada. Descartar o treino?')) descartar(true); return; }
-  if (!confirm('Encerrar e salvar este treino?')) return;
-  const sess = { id: uid(), fichaId: T.fichaId, letra: T.letra, nome: T.nome, inicio: T.inicio, fim: Date.now(), ex };
+  if (!forcado && !confirm('Encerrar e salvar este treino?')) return;
+  const sess = { id: uid(), fichaId: T.fichaId, letra: T.letra, nome: T.nome, inicio: T.inicio, fim: forcado ? Math.max(T.inicio + 60e3, Math.min(fimForcado, Date.now())) : Date.now(), ex };
   S.sessoes.unshift(sess); salvarSessao_(sess);
   S.ativo = null; stopT(); wake(false); salvarAtivo(true); document.body.classList.remove('emtreino'); go('evolucao'); toast('Treino salvo 💪');
 }
@@ -1042,26 +1042,82 @@ function aplicarTroca(i, novo, naFicha) {
   closeModal(); keepScroll(vTreino); toast(`Trocado por ${novo}${naFicha ? ' (também na ficha)' : ' (só hoje)'}`);
 }
 
+// ================= Aviso de fim de descanso em segundo plano (notificação enviada pelo servidor) =================
+// iPhone: só funciona com o app instalado na tela inicial (iOS 16.4+). O iPhone não deixa sites vibrarem; a notificação usa o som/vibração do sistema.
+const pushSuportado = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+let pushSub = (() => { try { return JSON.parse(localStorage.getItem('hf_push') || 'null'); } catch (e) { return null; } })();
+const b64u8 = b => { const p = '='.repeat((4 - b.length % 4) % 4), r = atob((b + p).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(r, c => c.charCodeAt(0)); };
+async function ativarPush() {
+  if (!ASSINATURA_API) return toast('Aviso em segundo plano indisponível nesta versão', 5000, 'erro');
+  if (isIOS && !standalone()) return openModal(`<h2>Instale o app primeiro</h2><div class="mut" style="line-height:1.6;margin-bottom:14px">No iPhone, o aviso com o app em segundo plano só funciona com o Hyper Fit instalado na tela inicial (iOS 16.4 ou mais novo). Instale e ative esta opção pelo app instalado.</div>
+    <button class="btn" onclick="A.closeModal();A.guiaInstalacao()">Como instalar</button><button class="btn ghost" style="margin-top:8px" onclick="A.closeModal()">Fechar</button>`);
+  if (!pushSuportado()) return toast('Este celular não aceita notificações de apps de site. No iPhone, atualize para o iOS 16.4 ou mais novo.', 7000, 'erro');
+  try {
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') return toast('As notificações estão bloqueadas. Libere em Ajustes do celular → Notificações → Hyper Fit.', 8000, 'erro');
+    const reg = await navigator.serviceWorker.ready, { publicKey } = await chamarAPI('vapid');
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64u8(publicKey) });
+    pushSub = sub.toJSON(); try { localStorage.setItem('hf_push', JSON.stringify(pushSub)); } catch (e) {}
+    toast('Aviso em segundo plano ativado ✅', 4000); if (rota === 'ajustes') keepScroll(vAjustes);
+  } catch (e) { toast('Não foi possível ativar o aviso: ' + e.message, 7000, 'erro'); }
+}
+async function desativarPush() {
+  try { const reg = await navigator.serviceWorker.ready; await (await reg.pushManager.getSubscription())?.unsubscribe(); } catch (e) {}
+  pushSub = null; try { localStorage.removeItem('hf_push'); } catch (e) {}
+  toast('Aviso em segundo plano desativado', 3000); if (rota === 'ajustes') keepScroll(vAjustes);
+}
+let pushT = null;
+function agendarAvisoPush(fim) { // agenda no servidor; ajustes rápidos (+10s/−10s) viram um pedido só
+  if (!pushSub || !ASSINATURA_API || !S.user) return; clearTimeout(pushT);
+  pushT = setTimeout(() => chamarAPI('descanso', { fim, sub: pushSub }).catch(e => console.warn('aviso descanso', e)), 400);
+}
+function cancelarAvisoPush() { if (!pushSub || !ASSINATURA_API || !S.user) return; clearTimeout(pushT); chamarAPI('descanso-cancelar').catch(() => {}); }
+function setAviso(k, v) { S.perfil.cfg[k] = v; salvarCfg(); if (k === 'somDescanso' && v) { destravarAudio(); bip(); } if (k === 'vibDescanso' && v && navigator.vibrate) navigator.vibrate(200); }
+
+// ================= Treino esquecido aberto =================
+const INATIVO_MIN = 45; // minutos sem nenhuma ação no treino
+let perguntouInatividade = false, ultInativo = 0;
+function checarInatividade() {
+  const T = S.ativo; if (!T || perguntouInatividade || !S.user || $('modal').classList.contains('show') || tEnd) return;
+  const ult = T.ultimaAtividade || T.inicio, parado = Date.now() - ult; if (parado < INATIVO_MIN * 60e3) return;
+  perguntouInatividade = true; ultInativo = ult;
+  const feitas = T.itens.reduce((a, e) => a + e.sets.filter(x => x.done).length, 0);
+  const h = Math.floor(parado / 3600e3), m = Math.floor(parado / 60e3) % 60, quanto = h >= 24 ? `${Math.floor(h / 24)} dia${h >= 48 ? 's' : ''}` : h ? `${h} h ${m} min` : `${m} min`;
+  openModal(`<h2>Você ainda está treinando?</h2><div class="mut" style="line-height:1.6;margin-bottom:14px">O Treino ${esc(T.letra)} · ${esc(T.nome)} está aberto, sem nenhuma atividade há <b style="color:var(--tx)">${quanto}</b>.${feitas ? ` Se encerrar agora, o treino é salvo com o horário da última série (${new Date(ult).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}), e não com o tempo parado.` : ''}</div>
+    <button class="btn" onclick="A.continuarTreino()">Continuar treinando</button>
+    ${feitas ? `<button class="btn ghost" style="margin-top:8px" onclick="A.encerrarInativo()">Encerrar e salvar (${feitas} série${feitas > 1 ? 's' : ''})</button>` : ''}
+    <button class="btn bad" style="margin-top:8px" onclick="A.descartarInativo()">Descartar treino</button>`);
+}
+function continuarTreino() { closeModal(); perguntouInatividade = false; if (S.ativo) { S.ativo.ultimaAtividade = Date.now(); salvarAtivo(true); } }
+function encerrarInativo() { const ult = ultInativo || S.ativo?.inicio; closeModal(); perguntouInatividade = false; finalizar(ult + 60e3); }
+function descartarInativo() { closeModal(); perguntouInatividade = false; descartar(true); toast('Treino descartado'); }
+setInterval(checarInatividade, 60e3);
+// qualquer toque na tela do treino conta como atividade (gravações automáticas, como o vídeo do exercício, não contam)
+document.addEventListener('pointerdown', () => { if (S.ativo && !perguntouInatividade && (rota === 'treino' || exAberto)) { const ag = Date.now(); if (ag - (S.ativo.ultimaAtividade || 0) > 30e3) { S.ativo.ultimaAtividade = ag; salvarAtivo(); } } }, true);
+
 // ================= Timer de descanso =================
 let tEnd = 0, tInt = null, actx = null;
 const emTreinoUI = () => rota === 'treino' && !!S.ativo;
-function startT(s) { tEnd = Date.now() + s * 1000; if (S.ativo) { S.ativo.restEnd = tEnd; salvarAtivo(); } mostrarTimer(); }
+function startT(s) { tEnd = Date.now() + s * 1000; if (S.ativo) { S.ativo.restEnd = tEnd; salvarAtivo(); } mostrarTimer(); agendarAvisoPush(tEnd); }
 function retomarTimer(end) { tEnd = end; mostrarTimer(); }
 function mostrarTimer() { $('tmLbl').textContent = 'DESCANSO'; clearInterval(tInt); tInt = setInterval(tick, 250); tick(); }
-function addT(s) { if (!tEnd) return; tEnd = Math.max(Date.now() + 1000, tEnd + s * 1000); if (S.ativo) { S.ativo.restEnd = tEnd; salvarAtivo(); } tick(); }
+function addT(s) { if (!tEnd) return; tEnd = Math.max(Date.now() + 1000, tEnd + s * 1000); if (S.ativo) { S.ativo.restEnd = tEnd; salvarAtivo(); } tick(); agendarAvisoPush(tEnd); }
 function pararTimerUI() { clearInterval(tInt); tInt = null; tEnd = 0; $('timer').classList.remove('show'); $('tRest').style.display = 'none'; }
-function stopT() { pararTimerUI(); if (S.ativo?.restEnd) { delete S.ativo.restEnd; salvarAtivo(); } }
+function stopT() { const tinha = !!tEnd; pararTimerUI(); if (S.ativo?.restEnd) { delete S.ativo.restEnd; salvarAtivo(); } if (tinha) cancelarAvisoPush(); }
 function tick() {
   const left = Math.ceil((tEnd - Date.now()) / 1000); if (left <= 0) return fimDescanso();
   const em = emTreinoUI(); $('timer').classList.toggle('show', !em); $('tRest').style.display = em ? 'flex' : 'none';
   $('tm').textContent = mmss(left); $('tRt').textContent = mmss(left);
 }
 function fimDescanso() {
+  const atrasado = Date.now() - tEnd > 5000; // o app estava em segundo plano: o aviso já foi pela notificação
   clearInterval(tInt); tInt = null; tEnd = 0; if (S.ativo?.restEnd) { delete S.ativo.restEnd; salvarAtivo(); }
   $('tmLbl').textContent = 'BORA!'; $('tm').textContent = '00:00'; $('tRt').textContent = 'BORA!';
-  bip(); if (navigator.vibrate) navigator.vibrate([300, 150, 300, 150, 300]);
-  if (document.hidden && 'Notification' in window && Notification.permission === 'granted' && navigator.serviceWorker?.controller)
-    navigator.serviceWorker.ready.then(r => r.showNotification('Descanso acabou', { body: 'Próxima série!', tag: 'descanso', renotify: true, vibrate: [300, 150, 300], icon: 'icon-192.png' }));
+  const c = S.perfil.cfg;
+  if (!atrasado && !document.hidden) { if (c.somDescanso !== false) bip(); if (c.vibDescanso !== false && navigator.vibrate) navigator.vibrate([300, 150, 300, 150, 300]); }
+  if (document.hidden && !pushSub && 'Notification' in window && Notification.permission === 'granted' && navigator.serviceWorker?.controller) // sem o aviso do servidor: tenta pelo próprio aparelho
+    navigator.serviceWorker.ready.then(r => r.showNotification('⏰ Descanso acabou', { body: 'Hora da próxima série 💪', tag: 'descanso', renotify: true, vibrate: [300, 150, 300], icon: 'icon-192.png' }));
   setTimeout(() => { if (!tInt) { $('timer').classList.remove('show'); $('tRest').style.display = 'none'; } }, 2500);
 }
 function destravarAudio() { try { if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)(); if (actx.state === 'suspended') actx.resume(); } catch (e) {} }
@@ -1263,9 +1319,14 @@ function vAjustes() {
     <select class="in" style="max-width:100%" onchange="A.setBackupDias(this.value)">
       ${[[0, 'Nunca'], [7, '7 dias'], [14, '14 dias'], [30, '30 dias']].map(([v, t]) => `<option value="${v}" ${c.backupDias === v ? 'selected' : ''}>${t}</option>`).join('')}
     </select></div>
+  <div class="card"><b>Fim do descanso</b>
+    <label class="tgl"><span>Som (com o app aberto)</span><input type="checkbox" ${c.somDescanso !== false ? 'checked' : ''} onchange="A.setAviso('somDescanso',this.checked)"></label>
+    ${isIOS ? '' : `<label class="tgl"><span>Vibração (com o app aberto)</span><input type="checkbox" ${c.vibDescanso !== false ? 'checked' : ''} onchange="A.setAviso('vibDescanso',this.checked)"></label>`}
+    <div class="tgl"><span>Aviso com o app em segundo plano<small class="mut" style="display:block;font-size:12px">${pushSub ? 'Ativo neste celular ✅' : isIOS && !standalone() ? 'No iPhone, instale o app na tela inicial para ativar' : 'Notificação com som e vibração do celular, mesmo usando outro app'}</small></span>
+      ${pushSub ? `<button class="btn sm ghost" onclick="A.desativarPush()">Desativar</button>` : `<button class="btn sm" onclick="A.ativarPush()">Ativar</button>`}</div>
+    ${isIOS ? `<div class="mut" style="font-size:12px;margin-top:8px;line-height:1.5">No iPhone, sites não podem vibrar: a vibração vem pela notificação. Com o celular no modo silencioso, o som do app aberto fica mudo.</div>` : ''}</div>
   <div class="card"><b>Aparelho</b><div class="mut" style="margin-top:6px;line-height:1.7">
-    Versão do app: ${VERSAO_APP}<br>Instalado na tela inicial: ${standalone() ? 'sim ✅' : 'não ⚠️'}<br>Notificação do timer (Android): ${notif === 'granted' ? 'ativa ✅' : notif}</div>
-    ${'Notification' in window && Notification.permission === 'default' && !isIOS ? `<button class="btn ghost" style="margin-top:10px" onclick="Notification.requestPermission().then(()=>A.go('ajustes'))">Ativar notificação do timer</button>` : ''}
+    Versão do app: ${VERSAO_APP}<br>Instalado na tela inicial: ${standalone() ? 'sim ✅' : 'não ⚠️'}</div>
     <button class="btn ghost" style="margin-top:10px" onclick="A.verificarAtualizacao()">Verificar atualização</button></div>
   <div class="card"><b>Zona de perigo</b><div class="mut" style="margin:6px 0 12px">Apaga fichas e histórico da sua conta (em todos os aparelhos). Exporte um backup antes.</div>
     <button class="btn bad" onclick="A.apagarTudo()">Apagar todos os meus dados</button>
@@ -2133,7 +2194,7 @@ async function verificarAtualizacao() {
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) return;
   swReg?.update().catch(() => {});
-  if (S.ativo) wake(true); if (tEnd) tick();
+  if (S.ativo) wake(true); if (tEnd) tick(); setTimeout(checarInatividade, 800);
   if (S.user && rota === 'fichas') { if (atualizacaoPendente) return location.reload(); render(); checarAvisoValidade(); }
 });
 window.addEventListener('online', () => { if (rota === 'fichas' || rota === 'ajustes') render(); });
@@ -2151,7 +2212,7 @@ window.A = { go, editar, df, d, ds, toggleBi, moverEx, removerEx, addEx, addSeri
   abaDieta: k => { abaDieta = k; refAberta = null; vDieta(); }, mudaDia, agua: aguaClick, abreRef, marcaRef, subsAlimento, trocaAlimento, comiOutra, estimar, registrarExtra, removeExtra, voltarPlano,
   setTextoDieta: v => { textoDieta = v; }, gerarDieta, setDietaImp: (k, v) => { dietaImport[k] = v; }, salvarDietaImport, editarPlano, dp, dm, dr, di, dqn, dun, addItem, remItem, addRef, remRef, metasDosItens, salvarPlanoManual, excluirPlano,
   verExercicio, admLiberar, admUsar, admRecarregar: () => { adminLista = null; vAdmin(); }, aceitarTermos, guiaInstalacao: () => guiaInstalacao(false), instalarAgora, excluirConta, confirmarExclusao,
-  recuperarDoCadastro, admLimpar, admConsultar, cancelarAssinatura, trocarCartao, recarregarCartao: () => { desmontarCartao(); vAssinar(); }, irLogin, voltarLanding, setNomeTreino, toggleProg, toggleFicha, menuProg, renomearProg, salvarNomeProg, validadeProg, salvarValidadeProg, atualProg, excluirProg, menuFicha, duplicarFicha, novoTreinoManual, criarTreinoManual, trocarAtual, pularOuProximo, sugerir, enviarSugestao, sugTipo: setSugTipo,
+  recuperarDoCadastro, ativarPush, desativarPush, setAviso, continuarTreino, encerrarInativo, descartarInativo, admLimpar, admConsultar, cancelarAssinatura, trocarCartao, recarregarCartao: () => { desmontarCartao(); vAssinar(); }, irLogin, voltarLanding, setNomeTreino, toggleProg, toggleFicha, menuProg, renomearProg, salvarNomeProg, validadeProg, salvarValidadeProg, atualProg, excluirProg, menuFicha, duplicarFicha, novoTreinoManual, criarTreinoManual, trocarAtual, pularOuProximo, sugerir, enviarSugestao, sugTipo: setSugTipo,
   setTema: t => { aplicarTema(t); S.perfil.cfg.tema = t; salvarCfg(); keepScroll(vAjustes); },
   modo: m => { const em = $('aEmail')?.value || ''; modoAuth = m; vAuth(); if (em && $('aEmail')) $('aEmail').value = em; } };
 
